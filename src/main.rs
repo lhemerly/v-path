@@ -1,3 +1,3 @@
-fn main() {
-    println!("v-path core engine: domain model ready");
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    v_path::tui::run()
 }
