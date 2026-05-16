@@ -6,12 +6,12 @@ This roadmap defines the implementation sequence for v-path. We are prioritizing
 
 *Goal: Build the underlying logic that generates and scores riffs.*
 
-Current status: the strict music-theory domain model, standard-tuned fretboard coordinate system, and first DFS pathfinding algorithm are implemented and covered by unit tests. The next Phase 1 task is the physical cost function refinement over generated riffs.
+Current status: the strict music-theory domain model, standard-tuned fretboard coordinate system, first DFS pathfinding algorithm, and physical distance scorer are implemented and covered by unit tests. The next Phase 1 task is musical cost filtering over generated riffs.
 
 * \[x\] **Domain Modeling:** Implement strict types for Note, PitchClass, Interval, Chord, and Scale.
 * \[x\] **Fretboard Coordinate System:** Map the 6 strings and 24 frets to a Cartesian grid (String, Fret). *Constraint: MVP strictly assumes Standard Tuning (EADGBE).*
 * \[x\] **Pathfinding Algorithm (V1):** Implement a depth-first search (DFS) or A\* algorithm to find paths of ![][image1] length between Chord A's shape and Chord B's root/3rd/5th.
-* \[ \] **Cost Function (Physical):** Implement distance scoring. A jump from fret 2 to 7 should score poorly; a progression from fret 2 to 3 to 4 should score well.
+* \[x\] **Cost Function (Physical):** Implement distance scoring. A jump from fret 2 to 7 scores poorly; a progression from fret 2 to 3 to 4 scores well.
 * \[ \] **Cost Function (Musical):** Implement tag-based filters (e.g., keeping only paths that contain 3rds or 6ths, or strict diatonic walks).
 
 ## **Phase 2: State Management & Persistence**

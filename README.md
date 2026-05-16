@@ -68,7 +68,8 @@ The first implemented layers are the domain model, the MVP fretboard grid, and t
 - `Scale`: a tonic plus typed `ScaleKind`, expandable to pitch classes with membership checks for diatonic filtering.
 - `Position`: a validated `(String, Fret)` coordinate where strings are `1..=6` and frets are `0..=24`.
 - `Fretboard`: a 6-string, 24-fret standard-tuned guitar grid only; open strings are EADGBE from low to high pitch (`6=E2`, `5=A2`, `4=D3`, `3=G3`, `2=B3`, `1=E4`).
-- `Riff`: a DFS-generated sequence of fretboard positions with target-tone/motion tags and an initial physical movement cost.
+- `Riff`: a DFS-generated sequence of fretboard positions with target-tone/motion tags and a derived physical movement cost.
+- `physical_cost`, `RiffScorer`, and `PhysicalDistanceScorer`: physical ranking primitives where adjacent fret movement stays cheap and large fret jumps are penalized quadratically while string crossing remains linear.
 - `find_paths`, `find_paths_in_range`, and `find_paths_with_limit`: V1 DFS helpers that walk local fretboard neighbors from Chord A pitch-class positions to Chord B root/3rd/5th targets.
 
 Run the engine tests with:

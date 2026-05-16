@@ -20,6 +20,30 @@ pub struct Riff {
     physical_cost: u32,
 }
 
+/// Calculates a cost for a riff in the context of a chord transition.
+///
+/// Scorers keep path generation separate from ranking. Lower costs are better,
+/// allowing callers to sort candidate riffs from easiest/most idiomatic to
+/// hardest.
+pub trait RiffScorer {
+    fn calculate_cost(&self, riff: &Riff, current_chord: &Chord, next_chord: &Chord) -> u32;
+}
+
+/// Scores a riff by physical fretboard distance.
+///
+/// Fret movement is intentionally squared per step: adjacent movement stays
+/// cheap, while large same-string jumps become disproportionately expensive.
+/// String movement remains linear because crossing one or two strings is much
+/// less disruptive than moving the fretting hand several frets at once.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PhysicalDistanceScorer;
+
+impl RiffScorer for PhysicalDistanceScorer {
+    fn calculate_cost(&self, riff: &Riff, _current_chord: &Chord, _next_chord: &Chord) -> u32 {
+        physical_cost(riff.sequence())
+    }
+}
+
 impl Riff {
     /// Builds a riff and derives its physical cost from the supplied sequence.
     ///
@@ -273,16 +297,18 @@ const LOCAL_NEIGHBOR_OFFSETS: [(i8, i8); 8] = [
 ];
 
 fn local_neighbors(position: Position) -> impl Iterator<Item = Position> {
-    LOCAL_NEIGHBOR_OFFSETS.into_iter().filter_map(move |(string_delta, fret_delta)| {
-        let string = position.string() as i8 + string_delta;
-        let fret = position.fret() as i8 + fret_delta;
-        ((MIN_STRING as i8..=MAX_STRING as i8).contains(&string)
-            && (MIN_FRET as i8..=MAX_FRET as i8).contains(&fret))
-        .then(|| {
-            Position::new(string as u8, fret as u8)
-                .expect("bounded neighbor coordinates should be valid")
+    LOCAL_NEIGHBOR_OFFSETS
+        .into_iter()
+        .filter_map(move |(string_delta, fret_delta)| {
+            let string = position.string() as i8 + string_delta;
+            let fret = position.fret() as i8 + fret_delta;
+            ((MIN_STRING as i8..=MAX_STRING as i8).contains(&string)
+                && (MIN_FRET as i8..=MAX_FRET as i8).contains(&fret))
+            .then(|| {
+                Position::new(string as u8, fret as u8)
+                    .expect("bounded neighbor coordinates should be valid")
+            })
         })
-    })
 }
 
 fn target_pitch_classes(chord: Chord) -> Vec<(PitchClass, TargetChordTone)> {
@@ -328,13 +354,20 @@ fn build_riff(fretboard: Fretboard, path: &[Position], target_tone: TargetChordT
     Riff::new(path.to_vec(), tags)
 }
 
-fn physical_cost(path: &[Position]) -> u32 {
+/// Returns the physical movement cost for a sequence of fretboard positions.
+///
+/// The score is additive over every move in the path. Per move, fret distance
+/// is squared and string distance is linear, so a single five-fret jump costs
+/// much more than a controlled walk through adjacent frets. Lower is better.
+pub fn physical_cost(path: &[Position]) -> u32 {
     path.windows(2)
         .map(|positions| {
             let current = positions[0];
             let next = positions[1];
-            current.fret().abs_diff(next.fret()) as u32
-                + current.string().abs_diff(next.string()) as u32
+            let fret_distance = current.fret().abs_diff(next.fret()) as u32;
+            let string_distance = current.string().abs_diff(next.string()) as u32;
+
+            fret_distance.pow(2) + string_distance
         })
         .sum()
 }
@@ -406,7 +439,46 @@ mod tests {
             vec!["target_root".to_owned()],
         );
 
-        assert_eq!(riff.physical_cost(), 5);
+        assert_eq!(riff.physical_cost(), 7);
+    }
+
+    #[test]
+    fn physical_cost_penalizes_large_fret_jumps_more_than_stepwise_motion() {
+        let jump = vec![
+            Position::new(6, 2).expect("start position should be valid"),
+            Position::new(6, 7).expect("large jump position should be valid"),
+        ];
+        let stepwise = vec![
+            Position::new(6, 2).expect("start position should be valid"),
+            Position::new(6, 3).expect("neighbor position should be valid"),
+            Position::new(6, 4).expect("target position should be valid"),
+        ];
+
+        assert_eq!(physical_cost(&jump), 25);
+        assert_eq!(physical_cost(&stepwise), 2);
+        assert!(physical_cost(&jump) > physical_cost(&stepwise));
+    }
+
+    #[test]
+    fn physical_distance_scorer_matches_riff_physical_cost() {
+        let riff = Riff::new(
+            vec![
+                Position::new(4, 2).expect("start position should be valid"),
+                Position::new(4, 3).expect("neighbor position should be valid"),
+                Position::new(3, 4).expect("target position should be valid"),
+            ],
+            vec!["target_third".to_owned()],
+        );
+        let scorer = PhysicalDistanceScorer;
+
+        assert_eq!(
+            scorer.calculate_cost(
+                &riff,
+                &Chord::new(PitchClass::D, ChordQuality::Major),
+                &Chord::new(PitchClass::G, ChordQuality::Major),
+            ),
+            riff.physical_cost()
+        );
     }
 
     #[test]
