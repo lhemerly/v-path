@@ -1,0 +1,16 @@
+[package]
+name = "v-path"
+version = "0.1.0"
+edition = "2021"
+description = "A terminal-based, mathematical pathfinding engine for guitar"
+license = "MIT"
+
+[lib]
+name = "v_path"
+path = "src/lib.rs"
+
+[[bin]]
+name = "v-path"
+path = "src/main.rs"
+
+[dependencies]

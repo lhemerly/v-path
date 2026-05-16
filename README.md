@@ -46,10 +46,29 @@ v-path doesn't use a static database of "cool licks." It calculates them on the 
 
 # Getting Started
 
+The core crate now exposes strict music-theory domain types for `Note`, `PitchClass`, `Interval`, `Chord`, and `Scale`. These types live in `src/theory.rs` and are re-exported from `v_path`, giving future fretboard and pathfinding code validated building blocks instead of raw strings or integers.
+
 (Installation instructions to be added upon release of v0.1.0)
 
 To run from source:
 
 ```
 cargo run --release
+```
+
+
+# Current Engine Surface
+
+The first implemented layer is the domain model:
+
+- `PitchClass`: canonical twelve-tone pitch classes with enharmonic parsing and transposition.
+- `Note`: an absolute pitch-class plus octave value using scientific pitch notation, constrained to the supported octave range.
+- `Interval`: a validated non-negative semitone distance capped at two octaves for MVP-scale generation.
+- `Chord`: a root plus typed `ChordQuality`, expandable to pitch classes.
+- `Scale`: a tonic plus typed `ScaleKind`, expandable to pitch classes with membership checks for diatonic filtering.
+
+Run the domain model tests with:
+
+```
+cargo test
 ```

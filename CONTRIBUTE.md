@@ -14,7 +14,9 @@ When writing generation logic, you are writing pathfinding algorithms. For the M
 
 ### **2\. Core Structs (Mental Model)**
 
-If you are working on the engine, you will interact with variants of these structures. Ensure your code respects these boundaries:  
+The core music-theory vocabulary is implemented in `src/theory.rs` and re-exported from `v_path`. Use the strict `PitchClass`, `Note`, `Interval`, `Chord`, and `Scale` types rather than raw strings or integer semitone values when adding engine logic.
+
+If you are working on the fretboard or riff engine, you will interact with variants of these structures. Ensure your code respects these boundaries:  
 // A point on the fretboard  
 pub struct Position {  
     pub string: u8, // 1 to 6  
