@@ -21,10 +21,10 @@ pub use fretboard::{
 };
 
 pub use pathfinding::{
-    annotate_musical_tags, apply_musical_filters, find_paths, find_paths_in_range,
-    find_paths_with_limit, physical_cost, MusicalFilter, PathfindingError, PhysicalDistanceScorer,
-    Riff, RiffScorer, TargetChordTone, DEFAULT_MAX_PATHS, MAX_PATH_NOTES, TAG_CONTAINS_SIXTH,
-    TAG_CONTAINS_THIRD, TAG_STRICT_DIATONIC,
+    anatomical_cost, annotate_musical_tags, apply_musical_filters, find_paths, find_paths_in_range,
+    find_paths_with_limit, infer_fingering, physical_cost, MusicalFilter, PathfindingError,
+    PhysicalDistanceScorer, Riff, RiffScorer, TargetChordTone, ANATOMICAL_STRETCH_PENALTY,
+    DEFAULT_MAX_PATHS, MAX_PATH_NOTES, TAG_CONTAINS_SIXTH, TAG_CONTAINS_THIRD, TAG_STRICT_DIATONIC,
 };
 
 pub use schema::{

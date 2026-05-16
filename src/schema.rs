@@ -473,7 +473,7 @@ mod tests {
             Position::new(6, 7).expect("low E fret 7 should be valid"),
         ]);
 
-        assert_eq!(saved.physical_cost(), 25);
+        assert_eq!(saved.physical_cost(), 1025);
         assert_eq!(saved.positions()[1].fret(), 7);
     }
 
