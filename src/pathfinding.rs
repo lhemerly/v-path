@@ -21,7 +21,13 @@ pub struct Riff {
 }
 
 impl Riff {
-    pub fn new(sequence: Vec<Position>, tags: Vec<String>, physical_cost: u32) -> Self {
+    /// Builds a riff and derives its physical cost from the supplied sequence.
+    ///
+    /// The cost is intentionally not caller-supplied so sorting and future
+    /// filtering cannot observe a stale or inconsistent movement score.
+    pub fn new(sequence: Vec<Position>, tags: Vec<String>) -> Self {
+        let physical_cost = physical_cost(&sequence);
+
         Self {
             sequence,
             tags,
@@ -320,7 +326,7 @@ fn build_riff(fretboard: Fretboard, path: &[Position], target_tone: TargetChordT
         tags.push("descending".to_owned());
     }
 
-    Riff::new(path.to_vec(), tags, physical_cost(path))
+    Riff::new(path.to_vec(), tags)
 }
 
 fn physical_cost(path: &[Position]) -> u32 {
@@ -388,6 +394,52 @@ mod tests {
         assert!(riffs
             .iter()
             .all(|riff| (2..=4).contains(&riff.sequence().len())));
+    }
+
+    #[test]
+    fn riff_constructor_derives_physical_cost_from_sequence() {
+        let riff = Riff::new(
+            vec![
+                Position::new(6, 2).expect("start position should be valid"),
+                Position::new(5, 3).expect("neighbor position should be valid"),
+                Position::new(4, 5).expect("target position should be valid"),
+            ],
+            vec!["target_root".to_owned()],
+        );
+
+        assert_eq!(riff.physical_cost(), 5);
+    }
+
+    #[test]
+    fn zero_max_paths_returns_an_empty_result_set() {
+        let riffs = find_paths_with_limit(
+            Fretboard::standard(),
+            Chord::new(PitchClass::D, ChordQuality::Major),
+            Chord::new(PitchClass::G, ChordQuality::Major),
+            3,
+            3,
+            0,
+        )
+        .expect("zero result cap should still be a valid search request");
+
+        assert!(riffs.is_empty());
+    }
+
+    #[test]
+    fn dfs_rejects_paths_longer_than_the_v1_bound() {
+        assert_eq!(
+            find_paths_in_range(
+                Fretboard::standard(),
+                Chord::new(PitchClass::C, ChordQuality::Major),
+                Chord::new(PitchClass::G, ChordQuality::Major),
+                2,
+                MAX_PATH_NOTES + 1,
+            ),
+            Err(PathfindingError::PathTooLong {
+                notes: MAX_PATH_NOTES + 1,
+                max_notes: MAX_PATH_NOTES,
+            })
+        );
     }
 
     #[test]
