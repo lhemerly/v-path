@@ -267,11 +267,11 @@ impl Transition {
 /// positions to avoid stale costs in newly-created profiles.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SavedRiff {
-    pub name: String,
-    pub variation: Option<String>,
-    pub positions: Vec<Position>,
-    pub tags: Vec<String>,
-    pub physical_cost: u32,
+    name: String,
+    variation: Option<String>,
+    positions: Vec<Position>,
+    tags: Vec<String>,
+    physical_cost: u32,
 }
 
 impl SavedRiff {
@@ -300,6 +300,48 @@ impl SavedRiff {
             riff.tags().to_vec(),
         )
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn set_name(&mut self, name: impl Into<String>) {
+        self.name = name.into();
+    }
+
+    pub fn variation(&self) -> Option<&str> {
+        self.variation.as_deref()
+    }
+
+    pub fn set_variation(&mut self, variation: Option<String>) {
+        self.variation = variation;
+    }
+
+    pub fn positions(&self) -> &[Position] {
+        &self.positions
+    }
+
+    /// Replaces this riff's saved position sequence and recomputes the derived cost.
+    ///
+    /// Creator Mode should use this whenever an edited saved riff changes notes;
+    /// this preserves the invariant that [`SavedRiff::physical_cost`] always
+    /// describes the current positions.
+    pub fn set_positions(&mut self, positions: Vec<Position>) {
+        self.physical_cost = physical_cost(&positions);
+        self.positions = positions;
+    }
+
+    pub fn tags(&self) -> &[String] {
+        &self.tags
+    }
+
+    pub fn set_tags(&mut self, tags: Vec<String>) {
+        self.tags = tags;
+    }
+
+    pub const fn physical_cost(&self) -> u32 {
+        self.physical_cost
+    }
 }
 
 #[cfg(test)]
@@ -320,8 +362,31 @@ mod tests {
             vec!["target_root".to_owned()],
         );
 
-        assert_eq!(saved.physical_cost, 9);
-        assert_eq!(saved.variation.as_deref(), Some("verse"));
+        assert_eq!(saved.physical_cost(), 9);
+        assert_eq!(saved.variation(), Some("verse"));
+    }
+
+    #[test]
+    fn saved_riff_position_edits_recompute_physical_cost() {
+        let mut saved = SavedRiff::new(
+            "Editable walk",
+            None,
+            vec![
+                Position::new(6, 2).expect("low E fret 2 should be valid"),
+                Position::new(6, 3).expect("low E fret 3 should be valid"),
+            ],
+            Vec::new(),
+        );
+
+        assert_eq!(saved.physical_cost(), 1);
+
+        saved.set_positions(vec![
+            Position::new(6, 2).expect("low E fret 2 should be valid"),
+            Position::new(6, 7).expect("low E fret 7 should be valid"),
+        ]);
+
+        assert_eq!(saved.physical_cost(), 25);
+        assert_eq!(saved.positions()[1].fret(), 7);
     }
 
     #[test]
@@ -336,10 +401,10 @@ mod tests {
 
         let saved = SavedRiff::from_riff("Chorus answer", Some("chorus".to_owned()), &riff);
 
-        assert_eq!(saved.name, "Chorus answer");
-        assert_eq!(saved.positions, riff.sequence());
-        assert_eq!(saved.tags, riff.tags());
-        assert_eq!(saved.physical_cost, riff.physical_cost());
+        assert_eq!(saved.name(), "Chorus answer");
+        assert_eq!(saved.positions(), riff.sequence());
+        assert_eq!(saved.tags(), riff.tags());
+        assert_eq!(saved.physical_cost(), riff.physical_cost());
     }
 
     #[test]
@@ -374,14 +439,8 @@ mod tests {
 
         assert_eq!(profile.schema_version, PROFILE_SCHEMA_VERSION);
         assert_eq!(profile.transitions[0].riffs.len(), 2);
-        assert_eq!(
-            profile.transitions[0].riffs[0].variation.as_deref(),
-            Some("verse")
-        );
-        assert_eq!(
-            profile.transitions[0].riffs[1].variation.as_deref(),
-            Some("chorus")
-        );
+        assert_eq!(profile.transitions[0].riffs[0].variation(), Some("verse"));
+        assert_eq!(profile.transitions[0].riffs[1].variation(), Some("chorus"));
     }
 
     #[test]
