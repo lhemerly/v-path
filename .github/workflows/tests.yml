@@ -1,0 +1,29 @@
+name: Tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-tests:
+    name: Rust tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        if: ${{ hashFiles('Cargo.toml') != '' }}
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run tests
+        if: ${{ hashFiles('Cargo.toml') != '' }}
+        run: cargo test
+
+      - name: Skip tests when crate is not present
+        if: ${{ hashFiles('Cargo.toml') == '' }}
+        run: echo "No Cargo.toml found; skipping Rust tests until the crate is added."
