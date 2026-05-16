@@ -135,21 +135,18 @@ impl HandStateMachine {
         chord: Chord,
         anchors: Vec<AnchorFinger>,
     ) -> Result<HandTransition, HandStateError> {
-        let previous = self.current.clone();
         let next = HandState::new(fretboard, chord, anchors)?;
+        let previous = self.current.take();
         let retained_anchors = previous
             .as_ref()
             .map(|previous| retained_anchors(previous, &next))
             .unwrap_or_default();
 
-        self.current = Some(next);
+        self.current = Some(next.clone());
 
         Ok(HandTransition {
             previous,
-            current: self
-                .current
-                .clone()
-                .expect("state was just set after validation"),
+            current: next,
             retained_anchors,
         })
     }
@@ -230,7 +227,7 @@ impl fmt::Display for HandStateError {
                 chord,
             } => write!(
                 f,
-                "anchor at string {} fret {} sounds {pitch_class}, which is not in {:?} {:?}",
+                "anchor at string {} fret {} sounds {pitch_class}, which is not in {} {}",
                 position.string(),
                 position.fret(),
                 chord.root(),
@@ -424,17 +421,24 @@ mod tests {
                 position: pos(1, 0)
             })
         );
+        let outside_chord_error = HandState::new(
+            fretboard,
+            c_major,
+            vec![AnchorFinger::new(Finger::Index, pos(6, 2))],
+        )
+        .expect_err("F# should not be accepted as a C major anchor");
+
         assert_eq!(
-            HandState::new(
-                fretboard,
-                c_major,
-                vec![AnchorFinger::new(Finger::Index, pos(6, 2))],
-            ),
-            Err(HandStateError::AnchorOutsideChord {
+            outside_chord_error,
+            HandStateError::AnchorOutsideChord {
                 position: pos(6, 2),
                 pitch_class: PitchClass::FSharp,
                 chord: c_major,
-            })
+            }
+        );
+        assert_eq!(
+            outside_chord_error.to_string(),
+            "anchor at string 6 fret 2 sounds F#, which is not in C major"
         );
     }
 }
