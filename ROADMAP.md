@@ -40,7 +40,7 @@ Current status: the strict music-theory domain model, standard-tuned fretboard c
 *Goal: Tell the user exactly which finger to use.*
 
 * \[x\] **Hand State Machine:** Track the anchor fingers of the current chord.
-* \[ \] **Anatomical Constraints:** Update the A\* algorithm to include Finger (1..4). Add heavy penalties for physically impossible stretches (e.g., Finger 1 on Fret 2, Finger 4 on Fret 8).
+* \[x\] **Anatomical Constraints:** Update the pathfinding scorer to include Finger (1..4). Add heavy penalties for physically impossible stretches (e.g., Finger 1 on Fret 2, Finger 4 on Fret 8).
 * \[ \] **TAB Update:** Render suggested fingering below the ASCII TAB strings.
 
 [image1]: <data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAAYCAYAAAD3Va0xAAAAyUlEQVR4XmNgGAWkgolA/A+I/0OxG6o0GMDkYLgcVRoVwBT9RZeAgvtAvAFdEBt4A8TfGSCGcaLJgcAXdAFswAqIs4HYiAFi0BlUaTAAiRMEO5HYMC8iA0Yg3ocmhhUga2yC8pEDNAeI7ZD4OMErND66q9DlsQJjIM5FE7vIADFIDcpH9ypWsIkBEgbIgIsBovkDVI7k8EEGsERaxEBk+HxCF4ACLwbMsMIJbIC4Dl0QCRA0qACIHzMgFF5GlYaDWQxEhs8oGHEAAITQNVQJ5ywJAAAAAElFTkSuQmCC>

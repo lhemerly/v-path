@@ -82,7 +82,7 @@
 
 use serde::{de, Deserialize, Deserializer, Serialize};
 
-use crate::{physical_cost, Chord, Position, Riff, Scale};
+use crate::{pathfinding::physical_movement_cost, physical_cost, Chord, Position, Riff, Scale};
 
 /// Current persisted profile schema version.
 ///
@@ -345,7 +345,8 @@ impl<'de> Deserialize<'de> for SavedRiff {
 
         let raw = RawSavedRiff::deserialize(deserializer)?;
         let expected_cost = physical_cost(&raw.positions);
-        if raw.physical_cost != expected_cost {
+        let legacy_v1_cost = physical_movement_cost(&raw.positions);
+        if raw.physical_cost != expected_cost && raw.physical_cost != legacy_v1_cost {
             return Err(de::Error::custom(format!(
                 "saved riff physical_cost {} does not match positions cost {}",
                 raw.physical_cost, expected_cost
@@ -473,7 +474,7 @@ mod tests {
             Position::new(6, 7).expect("low E fret 7 should be valid"),
         ]);
 
-        assert_eq!(saved.physical_cost(), 25);
+        assert_eq!(saved.physical_cost(), 1025);
         assert_eq!(saved.positions()[1].fret(), 7);
     }
 
@@ -584,6 +585,43 @@ mod tests {
         assert!(error
             .to_string()
             .contains("unsupported profile schema_version 2"));
+    }
+
+    #[test]
+    fn deserialization_accepts_legacy_v1_movement_only_costs() {
+        let legacy_profile = r#"schema_version: 1
+song:
+  title: "Legacy Stretch"
+  key:
+    tonic: D
+    kind: major
+  tuning: standard
+progression:
+  - root: D
+    quality: major
+  - root: G
+    quality: major
+transitions:
+  - id: legacy_d_to_g
+    from:
+      root: D
+      quality: major
+    to:
+      root: G
+      quality: major
+    riffs:
+      - name: Old wide jump
+        tags: [target_root]
+        physical_cost: 25
+        positions:
+          - { string: 6, fret: 2 }
+          - { string: 6, fret: 7 }
+"#;
+
+        let profile = SongProfile::from_yaml_str(legacy_profile)
+            .expect("legacy v1 movement-only costs should remain readable");
+
+        assert_eq!(profile.transitions[0].riffs[0].physical_cost(), 25);
     }
 
     #[test]

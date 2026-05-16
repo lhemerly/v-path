@@ -75,8 +75,8 @@ The first implemented layers are the domain model, the MVP fretboard grid, the V
 - `Position`: a validated `(String, Fret)` coordinate where strings are `1..=6` and frets are `0..=24`.
 - `Fretboard`: a 6-string, 24-fret standard-tuned guitar grid only; open strings are EADGBE from low to high pitch (`6=E2`, `5=A2`, `4=D3`, `3=G3`, `2=B3`, `1=E4`).
 - `Finger`, `AnchorFinger`, `HandState`, and `HandStateMachine`: Phase 4 fingering primitives that validate and track the fretting-hand anchors of the current chord shape, including retained anchors across chord transitions.
-- `Riff`: a DFS-generated sequence of fretboard positions with target-tone/motion/melodic-interval tags and a derived physical movement cost.
-- `physical_cost`, `RiffScorer`, and `PhysicalDistanceScorer`: physical ranking primitives where adjacent fret movement stays cheap and large fret jumps are penalized quadratically while string crossing remains linear.
+- `Riff`: a DFS-generated sequence of fretboard positions with target-tone/motion/melodic-interval tags, inferred `Finger` suggestions for fretted notes, and a derived physical/anatomical movement cost.
+- `physical_cost`, `infer_fingering`, `anatomical_cost`, `RiffScorer`, and `PhysicalDistanceScorer`: physical ranking primitives where adjacent fret movement stays cheap, large fret jumps are penalized quadratically, string crossing remains linear, and inferred Finger `1..=4` assignments add heavy penalties for impossible hand stretches.
 - `annotate_musical_tags`, `MusicalFilter`, and `apply_musical_filters`: musical filtering primitives for keeping riffs with derived tags such as `contains_third` or `contains_sixth`, or for requiring strict diatonic walks inside a supplied `Scale`.
 - `find_paths`, `find_paths_in_range`, and `find_paths_with_limit`: V1 DFS helpers that walk local fretboard neighbors from Chord A pitch-class positions to Chord B root/3rd/5th targets.
 - `SongProfile`, `SongMetadata`, `Transition`, `SavedRiff`, and `Tuning`: serde-backed YAML/TOML persistence types, including multiple named riff variations per chord transition.
