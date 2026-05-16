@@ -261,29 +261,28 @@ fn dfs(
     }
 }
 
-fn local_neighbors(position: Position) -> Vec<Position> {
-    let mut neighbors = Vec::new();
-    for string_delta in -1_i8..=1 {
-        for fret_delta in -1_i8..=1 {
-            if string_delta == 0 && fret_delta == 0 {
-                continue;
-            }
+const LOCAL_NEIGHBOR_OFFSETS: [(i8, i8); 8] = [
+    (-1, -1),
+    (0, -1),
+    (1, -1),
+    (-1, 0),
+    (1, 0),
+    (-1, 1),
+    (0, 1),
+    (1, 1),
+];
 
-            let string = position.string() as i8 + string_delta;
-            let fret = position.fret() as i8 + fret_delta;
-            if (MIN_STRING as i8..=MAX_STRING as i8).contains(&string)
-                && (MIN_FRET as i8..=MAX_FRET as i8).contains(&fret)
-            {
-                neighbors.push(
-                    Position::new(string as u8, fret as u8)
-                        .expect("bounded neighbor coordinates should be valid"),
-                );
-            }
-        }
-    }
-
-    neighbors.sort_by_key(|position| (position.fret(), position.string()));
-    neighbors
+fn local_neighbors(position: Position) -> impl Iterator<Item = Position> {
+    LOCAL_NEIGHBOR_OFFSETS.into_iter().filter_map(move |(string_delta, fret_delta)| {
+        let string = position.string() as i8 + string_delta;
+        let fret = position.fret() as i8 + fret_delta;
+        ((MIN_STRING as i8..=MAX_STRING as i8).contains(&string)
+            && (MIN_FRET as i8..=MAX_FRET as i8).contains(&fret))
+        .then(|| {
+            Position::new(string as u8, fret as u8)
+                .expect("bounded neighbor coordinates should be valid")
+        })
+    })
 }
 
 fn target_pitch_classes(chord: Chord) -> Vec<(PitchClass, TargetChordTone)> {
