@@ -1,6 +1,8 @@
 use std::{collections::HashSet, error::Error, fmt};
 
-use crate::{Chord, Fretboard, PitchClass, Position, MAX_FRET, MAX_STRING, MIN_FRET, MIN_STRING};
+use crate::{
+    Chord, Fretboard, PitchClass, Position, Scale, MAX_FRET, MAX_STRING, MIN_FRET, MIN_STRING,
+};
 
 /// Default cap used by the convenience search functions so V1 DFS remains
 /// responsive even when a transition has many possible local walks.
@@ -11,6 +13,44 @@ pub const DEFAULT_MAX_PATHS: usize = 256;
 /// This keeps the first engine iteration intentionally bounded; longer phrase
 /// generation can be added once scoring and pruning are more sophisticated.
 pub const MAX_PATH_NOTES: usize = 16;
+
+/// Tag added to riffs that contain at least one melodic third.
+pub const TAG_CONTAINS_THIRD: &str = "contains_third";
+
+/// Tag added to riffs that contain at least one melodic sixth.
+pub const TAG_CONTAINS_SIXTH: &str = "contains_sixth";
+
+/// Tag added when a riff has been verified to stay entirely inside a scale.
+pub const TAG_STRICT_DIATONIC: &str = "strict_diatonic";
+
+/// Musical constraints that can be applied after DFS generation.
+///
+/// These filters deliberately sit outside the core graph walk: generation can
+/// stay broad and cheap, while callers can keep only musically relevant paths
+/// such as third-heavy motion, sixth-heavy motion, or fully diatonic walks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MusicalFilter {
+    /// Keep only riffs that contain this exact tag.
+    RequiredTag(String),
+    /// Keep riffs that contain at least one of these tags.
+    AnyTag(Vec<String>),
+    /// Keep only riffs whose every note belongs to the supplied scale.
+    StrictDiatonic(Scale),
+}
+
+impl MusicalFilter {
+    pub fn required_tag(tag: impl Into<String>) -> Self {
+        Self::RequiredTag(tag.into())
+    }
+
+    pub fn any_tag(tags: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self::AnyTag(tags.into_iter().map(Into::into).collect())
+    }
+
+    pub const fn strict_diatonic(scale: Scale) -> Self {
+        Self::StrictDiatonic(scale)
+    }
+}
 
 /// A sequence of fretboard positions connecting two chords.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +97,18 @@ impl Riff {
             tags,
             physical_cost,
         }
+    }
+
+    fn with_added_tag(mut self, tag: &str) -> Self {
+        if !self.has_tag(tag) {
+            self.tags.push(tag.to_owned());
+        }
+
+        self
+    }
+
+    pub fn has_tag(&self, tag: &str) -> bool {
+        self.tags.iter().any(|candidate| candidate == tag)
     }
 
     pub fn sequence(&self) -> &[Position] {
@@ -351,7 +403,94 @@ fn build_riff(fretboard: Fretboard, path: &[Position], target_tone: TargetChordT
         tags.push("net_descending".to_owned());
     }
 
-    Riff::new(path.to_vec(), tags)
+    annotate_musical_tags(fretboard, Riff::new(path.to_vec(), tags))
+}
+
+/// Adds derived musical tags to a riff without changing its note sequence or cost.
+///
+/// This is useful for user-authored riffs as well as generated paths: once a
+/// riff has been annotated, tag filters such as `contains_third` and
+/// `contains_sixth` can be applied uniformly.
+pub fn annotate_musical_tags(fretboard: Fretboard, riff: Riff) -> Riff {
+    let mut has_third = false;
+    let mut has_sixth = false;
+
+    for positions in riff.sequence().windows(2) {
+        let current = fretboard.note_at(positions[0]);
+        let next = fretboard.note_at(positions[1]);
+        let interval = current.midi_number().abs_diff(next.midi_number()) % PitchClass::COUNT;
+
+        match interval {
+            3 | 4 => has_third = true,
+            8 | 9 => has_sixth = true,
+            _ => {}
+        }
+    }
+
+    let mut riff = riff;
+
+    if has_third {
+        riff = riff.with_added_tag(TAG_CONTAINS_THIRD);
+    }
+
+    if has_sixth {
+        riff = riff.with_added_tag(TAG_CONTAINS_SIXTH);
+    }
+
+    riff
+}
+
+/// Applies musical filters to an existing riff list.
+///
+/// Required tag filters use the tags already attached to a riff by generation
+/// or previous filters. `StrictDiatonic` inspects every pitch in the sequence
+/// against the supplied scale and annotates kept riffs with `strict_diatonic`
+/// so later tag-only passes can reuse that result.
+pub fn apply_musical_filters(
+    fretboard: Fretboard,
+    riffs: impl IntoIterator<Item = Riff>,
+    filters: &[MusicalFilter],
+) -> Vec<Riff> {
+    riffs
+        .into_iter()
+        .filter_map(|riff| apply_filters_to_riff(fretboard, riff, filters))
+        .collect()
+}
+
+fn apply_filters_to_riff(
+    fretboard: Fretboard,
+    mut riff: Riff,
+    filters: &[MusicalFilter],
+) -> Option<Riff> {
+    for filter in filters {
+        match filter {
+            MusicalFilter::RequiredTag(tag) => {
+                if !riff.has_tag(tag) {
+                    return None;
+                }
+            }
+            MusicalFilter::AnyTag(tags) => {
+                if !tags.iter().any(|tag| riff.has_tag(tag)) {
+                    return None;
+                }
+            }
+            MusicalFilter::StrictDiatonic(scale) => {
+                if !is_strict_diatonic(fretboard, &riff, *scale) {
+                    return None;
+                }
+
+                riff = riff.with_added_tag(TAG_STRICT_DIATONIC);
+            }
+        }
+    }
+
+    Some(riff)
+}
+
+fn is_strict_diatonic(fretboard: Fretboard, riff: &Riff, scale: Scale) -> bool {
+    riff.sequence()
+        .iter()
+        .all(|position| scale.contains(fretboard.note_at(*position).pitch_class()))
 }
 
 /// Returns the physical movement cost for a sequence of fretboard positions.
@@ -375,7 +514,7 @@ pub fn physical_cost(path: &[Position]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ChordQuality, PitchClass};
+    use crate::{ChordQuality, PitchClass, ScaleKind};
 
     #[test]
     fn dfs_finds_exact_length_paths_from_current_chord_shape_to_next_chord_tones() {
@@ -426,6 +565,163 @@ mod tests {
         assert!(riffs
             .iter()
             .all(|riff| (2..=4).contains(&riff.sequence().len())));
+    }
+
+    #[test]
+    fn generated_riffs_receive_melodic_interval_tags() {
+        let riffs = find_paths_with_limit(
+            Fretboard::standard(),
+            Chord::new(PitchClass::D, ChordQuality::Major),
+            Chord::new(PitchClass::G, ChordQuality::Major),
+            3,
+            3,
+            128,
+        )
+        .expect("D to G paths should be searchable");
+
+        assert!(riffs.iter().any(|riff| riff.has_tag(TAG_CONTAINS_THIRD)));
+    }
+
+    #[test]
+    fn musical_tag_annotation_detects_thirds_and_sixths() {
+        let fretboard = Fretboard::standard();
+        let third_riff = annotate_musical_tags(
+            fretboard,
+            Riff::new(
+                vec![
+                    Position::new(6, 0).expect("E2 should be valid"),
+                    Position::new(6, 3).expect("G2 should be valid"),
+                ],
+                Vec::new(),
+            ),
+        );
+        let sixth_riff = annotate_musical_tags(
+            fretboard,
+            Riff::new(
+                vec![
+                    Position::new(6, 0).expect("E2 should be valid"),
+                    Position::new(5, 4).expect("C#3 should be valid"),
+                ],
+                Vec::new(),
+            ),
+        );
+
+        assert!(third_riff.has_tag(TAG_CONTAINS_THIRD));
+        assert!(!third_riff.has_tag(TAG_CONTAINS_SIXTH));
+        assert!(sixth_riff.has_tag(TAG_CONTAINS_SIXTH));
+        assert!(!sixth_riff.has_tag(TAG_CONTAINS_THIRD));
+    }
+
+    #[test]
+    fn musical_filters_keep_required_interval_tags() {
+        let fretboard = Fretboard::standard();
+        let third_riff = annotate_musical_tags(
+            fretboard,
+            Riff::new(
+                vec![
+                    Position::new(6, 0).expect("E2 should be valid"),
+                    Position::new(6, 3).expect("G2 should be valid"),
+                ],
+                Vec::new(),
+            ),
+        );
+        let stepwise_riff = annotate_musical_tags(
+            fretboard,
+            Riff::new(
+                vec![
+                    Position::new(6, 0).expect("E2 should be valid"),
+                    Position::new(6, 1).expect("F2 should be valid"),
+                ],
+                Vec::new(),
+            ),
+        );
+
+        let filtered = apply_musical_filters(
+            fretboard,
+            vec![third_riff.clone(), stepwise_riff],
+            &[MusicalFilter::required_tag(TAG_CONTAINS_THIRD)],
+        );
+
+        assert_eq!(filtered, vec![third_riff]);
+    }
+
+    #[test]
+    fn musical_filters_keep_riffs_with_any_matching_tag() {
+        let fretboard = Fretboard::standard();
+        let third_riff = Riff::new(
+            vec![
+                Position::new(6, 0).expect("E2 should be valid"),
+                Position::new(6, 3).expect("G2 should be valid"),
+            ],
+            vec![TAG_CONTAINS_THIRD.to_owned()],
+        );
+        let sixth_riff = Riff::new(
+            vec![
+                Position::new(6, 0).expect("E2 should be valid"),
+                Position::new(5, 4).expect("C#3 should be valid"),
+            ],
+            vec![TAG_CONTAINS_SIXTH.to_owned()],
+        );
+        let target_only_riff = Riff::new(
+            vec![
+                Position::new(5, 3).expect("C3 should be valid"),
+                Position::new(5, 5).expect("D3 should be valid"),
+            ],
+            vec!["target_root".to_owned()],
+        );
+
+        let filtered = apply_musical_filters(
+            fretboard,
+            vec![
+                third_riff.clone(),
+                sixth_riff.clone(),
+                target_only_riff.clone(),
+            ],
+            &[MusicalFilter::any_tag([TAG_CONTAINS_SIXTH, "target_root"])],
+        );
+
+        assert_eq!(filtered, vec![sixth_riff, target_only_riff]);
+
+        let no_match = apply_musical_filters(
+            fretboard,
+            vec![third_riff],
+            &[MusicalFilter::any_tag(["chromatic", "pedal_point"])],
+        );
+
+        assert!(no_match.is_empty());
+    }
+
+    #[test]
+    fn strict_diatonic_filter_keeps_scale_walks_and_adds_a_tag() {
+        let fretboard = Fretboard::standard();
+        let diatonic_riff = Riff::new(
+            vec![
+                Position::new(5, 3).expect("C3 should be valid"),
+                Position::new(5, 5).expect("D3 should be valid"),
+                Position::new(4, 2).expect("E3 should be valid"),
+            ],
+            Vec::new(),
+        );
+        let chromatic_riff = Riff::new(
+            vec![
+                Position::new(5, 3).expect("C3 should be valid"),
+                Position::new(4, 4).expect("F#3 should be valid"),
+            ],
+            Vec::new(),
+        );
+
+        let filtered = apply_musical_filters(
+            fretboard,
+            vec![diatonic_riff.clone(), chromatic_riff],
+            &[MusicalFilter::strict_diatonic(Scale::new(
+                PitchClass::C,
+                ScaleKind::Major,
+            ))],
+        );
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].sequence(), diatonic_riff.sequence());
+        assert!(filtered[0].has_tag(TAG_STRICT_DIATONIC));
     }
 
     #[test]
