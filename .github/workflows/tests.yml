@@ -1,0 +1,30 @@
+name: Tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-tests:
+    name: Rust tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify Cargo manifest exists
+        run: |
+          if [ ! -f Cargo.toml ]; then
+            echo "Cargo.toml is required so CI can run the Rust test suite."
+            exit 1
+          fi
+
+      - name: Run tests
+        run: cargo test
