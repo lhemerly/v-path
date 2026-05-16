@@ -42,7 +42,7 @@ v-path doesn't use a static database of "cool licks." It calculates them on the 
 
 - Voice Leading Continuity: Ensuring the exit note of a riff is a half or whole step away from the target chord's root or 3rd.
 
-- Physical Cost Optimization: Using an algorithm to minimize $\Delta \text{Fret} + \Delta \text{String}$, ensuring the hand doesn't make impossible jumps.
+- Physical Cost Optimization: Using an algorithm to minimize $\Delta \text{Fret}^2 + \Delta \text{String}$ per move, making adjacent fret motion cheap while large fret jumps become disproportionately expensive.
 
 # Getting Started
 
