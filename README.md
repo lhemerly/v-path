@@ -59,7 +59,7 @@ cargo run --release
 
 # Current Engine Surface
 
-The first implemented layers are the domain model and the MVP fretboard grid:
+The first implemented layers are the domain model, the MVP fretboard grid, and the V1 pathfinding engine:
 
 - `PitchClass`: canonical twelve-tone pitch classes with enharmonic parsing and transposition.
 - `Note`: an absolute pitch-class plus octave value using scientific pitch notation, constrained to the supported octave range.
@@ -68,8 +68,10 @@ The first implemented layers are the domain model and the MVP fretboard grid:
 - `Scale`: a tonic plus typed `ScaleKind`, expandable to pitch classes with membership checks for diatonic filtering.
 - `Position`: a validated `(String, Fret)` coordinate where strings are `1..=6` and frets are `0..=24`.
 - `Fretboard`: a 6-string, 24-fret standard-tuned guitar grid only; open strings are EADGBE from low to high pitch (`6=E2`, `5=A2`, `4=D3`, `3=G3`, `2=B3`, `1=E4`).
+- `Riff`: a DFS-generated sequence of fretboard positions with target-tone/motion tags and an initial physical movement cost.
+- `find_paths`, `find_paths_in_range`, and `find_paths_with_limit`: V1 DFS helpers that walk local fretboard neighbors from Chord A pitch-class positions to Chord B root/3rd/5th targets.
 
-Run the domain model tests with:
+Run the engine tests with:
 
 ```
 cargo test
