@@ -55,11 +55,18 @@ pub struct App {
     live: LiveState,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LiveFocus {
+    PathInput,
+    Grid,
+}
+
 #[derive(Debug, Clone)]
 pub struct LiveState {
     profile: Option<SongProfile>,
     profile_path_input: String,
     selected_card: usize,
+    focus: LiveFocus,
     status: String,
 }
 
@@ -95,6 +102,7 @@ impl LiveState {
             profile: None,
             profile_path_input: String::new(),
             selected_card: 0,
+            focus: LiveFocus::PathInput,
             status: "Enter a saved YAML profile path and press Enter to load Live Mode.".to_owned(),
         }
     }
@@ -111,6 +119,28 @@ impl LiveState {
         &self.status
     }
 
+    fn is_editing_path(&self) -> bool {
+        self.focus == LiveFocus::PathInput
+    }
+
+    fn edit_path(&mut self) {
+        self.focus = LiveFocus::PathInput;
+        self.status =
+            "Editing YAML path. Type any path characters, Enter loads, Tab returns to TAB grid."
+                .to_owned();
+    }
+
+    fn focus_grid(&mut self) {
+        if self.profile.is_some() {
+            self.focus = LiveFocus::Grid;
+            self.status =
+                "TAB grid focused. Use j/k or ↑/↓ to move, i edits the YAML path.".to_owned();
+        } else {
+            self.focus = LiveFocus::PathInput;
+            self.status = "Load a YAML profile before focusing the TAB grid.".to_owned();
+        }
+    }
+
     fn load_yaml_profile(&mut self, path: &Path) {
         match fs::read_to_string(path) {
             Ok(input) => match SongProfile::from_yaml_str(&input) {
@@ -122,6 +152,7 @@ impl LiveState {
                         .sum::<usize>();
                     self.profile_path_input = path.display().to_string();
                     self.selected_card = 0;
+                    self.focus = LiveFocus::Grid;
                     self.status = format!(
                         "Loaded '{}' with {} transition(s) and {} saved TAB(s). Use j/k to move focus.",
                         profile.song.title,
@@ -135,12 +166,14 @@ impl LiveState {
                         format!("Could not parse YAML profile '{}': {error}", path.display());
                     self.profile = None;
                     self.selected_card = 0;
+                    self.focus = LiveFocus::PathInput;
                 }
             },
             Err(error) => {
                 self.status = format!("Could not read YAML profile '{}': {error}", path.display());
                 self.profile = None;
                 self.selected_card = 0;
+                self.focus = LiveFocus::PathInput;
             }
         }
     }
@@ -360,6 +393,8 @@ impl App {
         let mut app = Self::default();
         let path = path.into();
         app.live.load_yaml_profile(&path);
+        app.mode = AppMode::Live;
+        app.menu_index = 1;
         app
     }
 
@@ -457,16 +492,27 @@ impl App {
     }
 
     fn handle_live_key(&mut self, key: KeyEvent) {
+        if self.live.is_editing_path() {
+            match key.code {
+                KeyCode::Esc => self.mode = AppMode::MainMenu,
+                KeyCode::Tab => self.live.focus_grid(),
+                KeyCode::Enter => self.live.load_profile_from_input(),
+                KeyCode::Backspace => {
+                    self.live.profile_path_input.pop();
+                }
+                KeyCode::Char(c) => self.live.profile_path_input.push(c),
+                _ => {}
+            }
+            return;
+        }
+
         match key.code {
             KeyCode::Esc => self.mode = AppMode::MainMenu,
             KeyCode::Char('q') => self.should_quit = true,
+            KeyCode::Char('i') => self.live.edit_path(),
+            KeyCode::Tab => self.live.edit_path(),
             KeyCode::Char('j') | KeyCode::Down => self.live.move_selection_down(),
             KeyCode::Char('k') | KeyCode::Up => self.live.move_selection_up(),
-            KeyCode::Enter => self.live.load_profile_from_input(),
-            KeyCode::Backspace => {
-                self.live.profile_path_input.pop();
-            }
-            KeyCode::Char(c) => self.live.profile_path_input.push(c),
             _ => {}
         }
     }
@@ -801,7 +847,11 @@ fn render_live_header(frame: &mut Frame<'_>, area: Rect, state: &LiveState) {
                 state.profile_path_input.as_str()
             }
         )),
-        Line::from("Enter load · j/k focus TAB · Esc menu · q quit"),
+        Line::from(if state.is_editing_path() {
+            "Path input focused · Enter load · Tab grid · Esc menu"
+        } else {
+            "TAB grid focused · j/k move · i or Tab edit path · Esc menu · q quit"
+        }),
     ];
 
     let header = Paragraph::new(lines).block(Block::default().borders(Borders::ALL));
@@ -1185,16 +1235,40 @@ mod tests {
 
         let mut app = App::with_live_profile_path(&path);
 
+        assert_eq!(app.mode(), AppMode::Live);
+        assert_eq!(app.selected_menu_choice(), MainMenuChoice::LiveMode);
         assert_eq!(app.live().profile().unwrap().song.title, "Example Tune");
         assert!(app.live().status().contains("2 saved TAB"));
         assert_eq!(app.live().selected_card(), 0);
 
-        app.menu_index = 1;
-        app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Char('j')));
         assert_eq!(app.live().selected_card(), 1);
         app.handle_key(key(KeyCode::Char('k')));
         assert_eq!(app.live().selected_card(), 0);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn live_path_input_accepts_j_and_k_characters() {
+        let path =
+            std::env::temp_dir().join(format!("v-path-jack-profile-{}.yml", std::process::id()));
+        std::fs::write(&path, crate::YAML_PROFILE_EXAMPLE).expect("test profile should write");
+
+        let mut app = App::default();
+        app.handle_key(key(KeyCode::Char('j')));
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.mode(), AppMode::Live);
+
+        for c in path.display().to_string().chars() {
+            app.handle_key(key(KeyCode::Char(c)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+
+        assert_eq!(app.live().profile().unwrap().song.title, "Example Tune");
+        assert_eq!(app.live().selected_card(), 0);
+        app.handle_key(key(KeyCode::Char('j')));
+        assert_eq!(app.live().selected_card(), 1);
 
         let _ = std::fs::remove_file(path);
     }
