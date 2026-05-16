@@ -349,19 +349,60 @@ impl App {
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
+    let mut cleanup = TerminalCleanup::default();
+
     enable_raw_mode()?;
+    cleanup.raw_mode_enabled = true;
+
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
+    cleanup.alternate_screen_enabled = true;
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let result = run_app(&mut terminal, App::default());
-
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    cleanup.restore(&mut terminal)?;
 
     result
+}
+
+#[derive(Debug, Default)]
+struct TerminalCleanup {
+    raw_mode_enabled: bool,
+    alternate_screen_enabled: bool,
+}
+
+impl TerminalCleanup {
+    fn restore(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> Result<(), Box<dyn Error>> {
+        if self.alternate_screen_enabled {
+            execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+            self.alternate_screen_enabled = false;
+        }
+
+        if self.raw_mode_enabled {
+            disable_raw_mode()?;
+            self.raw_mode_enabled = false;
+        }
+
+        terminal.show_cursor()?;
+        Ok(())
+    }
+}
+
+impl Drop for TerminalCleanup {
+    fn drop(&mut self) {
+        if self.alternate_screen_enabled {
+            let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        }
+
+        if self.raw_mode_enabled {
+            let _ = disable_raw_mode();
+        }
+    }
 }
 
 fn run_app(
