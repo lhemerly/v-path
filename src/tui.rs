@@ -1,8 +1,13 @@
-use std::{error::Error, io, time::Duration};
+use std::{
+    error::Error,
+    fs, io,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use crate::{
     apply_musical_filters, find_paths_with_limit, Chord, ChordQuality, Fretboard, MusicalFilter,
-    PitchClass, Riff,
+    PitchClass, Riff, SavedRiff, SongProfile, Transition,
 };
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -47,6 +52,15 @@ pub struct App {
     should_quit: bool,
     menu_index: usize,
     creator: CreatorState,
+    live: LiveState,
+}
+
+#[derive(Debug, Clone)]
+pub struct LiveState {
+    profile: Option<SongProfile>,
+    profile_path_input: String,
+    selected_card: usize,
+    status: String,
 }
 
 #[derive(Debug, Clone)]
@@ -70,7 +84,99 @@ impl Default for App {
             should_quit: false,
             menu_index: 0,
             creator: CreatorState::new(),
+            live: LiveState::new(),
         }
+    }
+}
+
+impl LiveState {
+    fn new() -> Self {
+        Self {
+            profile: None,
+            profile_path_input: String::new(),
+            selected_card: 0,
+            status: "Enter a saved YAML profile path and press Enter to load Live Mode.".to_owned(),
+        }
+    }
+
+    pub fn profile(&self) -> Option<&SongProfile> {
+        self.profile.as_ref()
+    }
+
+    pub fn selected_card(&self) -> usize {
+        self.selected_card
+    }
+
+    pub fn status(&self) -> &str {
+        &self.status
+    }
+
+    fn load_yaml_profile(&mut self, path: &Path) {
+        match fs::read_to_string(path) {
+            Ok(input) => match SongProfile::from_yaml_str(&input) {
+                Ok(profile) => {
+                    let riff_count = profile
+                        .transitions
+                        .iter()
+                        .map(|transition| transition.riffs.len())
+                        .sum::<usize>();
+                    self.profile_path_input = path.display().to_string();
+                    self.selected_card = 0;
+                    self.status = format!(
+                        "Loaded '{}' with {} transition(s) and {} saved TAB(s). Use j/k to move focus.",
+                        profile.song.title,
+                        profile.transitions.len(),
+                        riff_count
+                    );
+                    self.profile = Some(profile);
+                }
+                Err(error) => {
+                    self.status =
+                        format!("Could not parse YAML profile '{}': {error}", path.display());
+                    self.profile = None;
+                    self.selected_card = 0;
+                }
+            },
+            Err(error) => {
+                self.status = format!("Could not read YAML profile '{}': {error}", path.display());
+                self.profile = None;
+                self.selected_card = 0;
+            }
+        }
+    }
+
+    fn load_profile_from_input(&mut self) {
+        let raw = self.profile_path_input.trim().to_owned();
+        if raw.is_empty() {
+            self.status = "Enter a YAML profile path before loading Live Mode.".to_owned();
+            return;
+        }
+
+        self.load_yaml_profile(Path::new(&raw));
+    }
+
+    fn saved_tab_count(&self) -> usize {
+        self.profile
+            .as_ref()
+            .map(|profile| {
+                profile
+                    .transitions
+                    .iter()
+                    .map(|transition| transition.riffs.len())
+                    .sum()
+            })
+            .unwrap_or(0)
+    }
+
+    fn move_selection_down(&mut self) {
+        let count = self.saved_tab_count();
+        if count > 0 {
+            self.selected_card = (self.selected_card + 1).min(count - 1);
+        }
+    }
+
+    fn move_selection_up(&mut self) {
+        self.selected_card = self.selected_card.saturating_sub(1);
     }
 }
 
@@ -250,6 +356,13 @@ impl CreatorState {
 }
 
 impl App {
+    pub fn with_live_profile_path(path: impl Into<PathBuf>) -> Self {
+        let mut app = Self::default();
+        let path = path.into();
+        app.live.load_yaml_profile(&path);
+        app
+    }
+
     pub fn mode(&self) -> AppMode {
         self.mode
     }
@@ -267,6 +380,10 @@ impl App {
 
     pub fn creator(&self) -> &CreatorState {
         &self.creator
+    }
+
+    pub fn live(&self) -> &LiveState {
+        &self.live
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
@@ -343,12 +460,23 @@ impl App {
         match key.code {
             KeyCode::Esc => self.mode = AppMode::MainMenu,
             KeyCode::Char('q') => self.should_quit = true,
+            KeyCode::Char('j') | KeyCode::Down => self.live.move_selection_down(),
+            KeyCode::Char('k') | KeyCode::Up => self.live.move_selection_up(),
+            KeyCode::Enter => self.live.load_profile_from_input(),
+            KeyCode::Backspace => {
+                self.live.profile_path_input.pop();
+            }
+            KeyCode::Char(c) => self.live.profile_path_input.push(c),
             _ => {}
         }
     }
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
+    run_with_live_profile_path(None::<PathBuf>)
+}
+
+pub fn run_with_live_profile_path(path: Option<impl Into<PathBuf>>) -> Result<(), Box<dyn Error>> {
     let mut cleanup = TerminalCleanup::default();
 
     enable_raw_mode()?;
@@ -361,7 +489,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_app(&mut terminal, App::default());
+    let app = path.map(App::with_live_profile_path).unwrap_or_default();
+    let result = run_app(&mut terminal, app);
     cleanup.restore(&mut terminal)?;
 
     result
@@ -430,7 +559,7 @@ fn render(frame: &mut Frame<'_>, app: &App) {
     match app.mode {
         AppMode::MainMenu => render_main_menu(frame, app),
         AppMode::Creator => render_creator(frame, &app.creator),
-        AppMode::Live => render_live(frame),
+        AppMode::Live => render_live(frame, &app.live),
     }
 }
 
@@ -620,19 +749,206 @@ fn render_riff_list(frame: &mut Frame<'_>, area: Rect, state: &CreatorState) {
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-fn render_live(frame: &mut Frame<'_>) {
-    let paragraph = Paragraph::new(vec![
+fn render_live(frame: &mut Frame<'_>, state: &LiveState) {
+    let shell = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),
+            Constraint::Min(8),
+            Constraint::Length(3),
+        ])
+        .split(frame.area());
+
+    render_live_header(frame, shell[0], state);
+    render_live_grid(frame, shell[1], state);
+
+    let status = Paragraph::new(state.status.as_str())
+        .block(Block::default().title(" Status ").borders(Borders::ALL))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(status, shell[2]);
+}
+
+fn render_live_header(frame: &mut Frame<'_>, area: Rect, state: &LiveState) {
+    let title = state
+        .profile
+        .as_ref()
+        .map(|profile| {
+            let artist = profile
+                .song
+                .artist
+                .as_deref()
+                .map(|artist| format!(" — {artist}"))
+                .unwrap_or_default();
+            format!("{}{}", profile.song.title, artist)
+        })
+        .unwrap_or_else(|| "No song loaded".to_owned());
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("The Stage  ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                title,
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(format!(
+            "YAML: {}",
+            if state.profile_path_input.is_empty() {
+                "type path here"
+            } else {
+                state.profile_path_input.as_str()
+            }
+        )),
+        Line::from("Enter load · j/k focus TAB · Esc menu · q quit"),
+    ];
+
+    let header = Paragraph::new(lines).block(Block::default().borders(Borders::ALL));
+    frame.render_widget(header, area);
+}
+
+fn render_live_grid(frame: &mut Frame<'_>, area: Rect, state: &LiveState) {
+    let Some(profile) = state.profile.as_ref() else {
+        let empty = Paragraph::new(vec![
+            Line::from(Span::styled(
+                "Load a saved .yml song profile",
+                Style::default().add_modifier(Modifier::BOLD),
+            )),
+            Line::from("Live Mode reads the YAML profile and turns saved riffs into stage-sized ASCII TAB cards."),
+            Line::from("The performance view stays clean: one header, a dynamic grid, and a short status bar."),
+        ])
+        .block(Block::default().title(" Live Mode ").borders(Borders::ALL))
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true });
+        frame.render_widget(empty, area);
+        return;
+    };
+
+    let cards = live_tab_cards(profile);
+    if cards.is_empty() {
+        let empty = Paragraph::new("The loaded song has no saved TAB riffs to display.")
+            .block(Block::default().title(" Live Mode ").borders(Borders::ALL))
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: true });
+        frame.render_widget(empty, area);
+        return;
+    }
+
+    let margin = live_margin(area);
+    let columns = live_grid_columns(margin, cards.len());
+    let rows = cards.len().div_ceil(columns);
+    let row_constraints = vec![Constraint::Ratio(1, rows as u32); rows];
+    let row_areas = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(row_constraints)
+        .split(margin);
+
+    for row in 0..rows {
+        let start = row * columns;
+        let end = (start + columns).min(cards.len());
+        let column_constraints = vec![Constraint::Ratio(1, (end - start) as u32); end - start];
+        let column_areas = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(column_constraints)
+            .split(row_areas[row]);
+
+        for (offset, card) in cards[start..end].iter().enumerate() {
+            let card_index = start + offset;
+            render_live_card(
+                frame,
+                column_areas[offset],
+                card,
+                card_index == state.selected_card,
+            );
+        }
+    }
+}
+
+fn live_margin(area: Rect) -> Rect {
+    let horizontal = area.width.min(4) / 2;
+    let vertical = area.height.min(2) / 2;
+    Rect {
+        x: area.x + horizontal,
+        y: area.y + vertical,
+        width: area.width.saturating_sub(horizontal * 2),
+        height: area.height.saturating_sub(vertical * 2),
+    }
+}
+
+fn live_grid_columns(area: Rect, card_count: usize) -> usize {
+    if card_count <= 1 || area.width < 72 {
+        1
+    } else if card_count <= 4 || area.width < 120 {
+        2
+    } else {
+        3
+    }
+}
+
+#[derive(Debug, Clone)]
+struct LiveTabCard<'a> {
+    transition: &'a Transition,
+    riff: &'a SavedRiff,
+}
+
+fn live_tab_cards(profile: &SongProfile) -> Vec<LiveTabCard<'_>> {
+    profile
+        .transitions
+        .iter()
+        .flat_map(|transition| {
+            transition
+                .riffs
+                .iter()
+                .map(move |riff| LiveTabCard { transition, riff })
+        })
+        .collect()
+}
+
+fn render_live_card(frame: &mut Frame<'_>, area: Rect, card: &LiveTabCard<'_>, selected: bool) {
+    let variation = card.riff.variation().unwrap_or("default");
+    let title = format!(
+        " {} → {} · {} ",
+        card.transition.from, card.transition.to, variation
+    );
+    let border_style = if selected {
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+
+    let mut lines = vec![
         Line::from(Span::styled(
-            "Live Mode",
+            card.riff.name().to_owned(),
             Style::default().add_modifier(Modifier::BOLD),
         )),
-        Line::from("Profile loading and performance grid are planned next."),
-        Line::from("Press Esc to return to the main menu or q to quit."),
-    ])
-    .block(Block::default().title(" The Stage ").borders(Borders::ALL))
-    .alignment(Alignment::Center)
-    .wrap(Wrap { trim: true });
-    frame.render_widget(paragraph, frame.area());
+        Line::from(format!(
+            "score {:>3} · tags {}",
+            card.riff.physical_cost(),
+            card.riff.tags().join(", ")
+        )),
+        Line::from(""),
+    ];
+    lines.extend(render_saved_tab_lines(card.riff).into_iter().map(|line| {
+        Line::from(Span::styled(
+            line,
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ))
+    }));
+
+    let paragraph = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_style(border_style),
+        )
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, area);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
@@ -660,6 +976,38 @@ fn render_tab(riff: &Riff) -> String {
         .map(|position| format!("s{}f{}", position.string(), position.fret()))
         .collect::<Vec<_>>()
         .join(" → ")
+}
+
+fn render_saved_tab_lines(riff: &SavedRiff) -> Vec<String> {
+    let max_fret_width = riff
+        .positions()
+        .iter()
+        .map(|position| position.fret().to_string().len())
+        .max()
+        .unwrap_or(1);
+    let silence = "-".repeat(max_fret_width + 2);
+
+    [(1, "e"), (2, "B"), (3, "G"), (4, "D"), (5, "A"), (6, "E")]
+        .into_iter()
+        .map(|(string, label)| {
+            let cells = riff
+                .positions()
+                .iter()
+                .map(|position| {
+                    if position.string() == string {
+                        format!(
+                            "-{fret:>width$}-",
+                            fret = position.fret(),
+                            width = max_fret_width
+                        )
+                    } else {
+                        silence.clone()
+                    }
+                })
+                .collect::<String>();
+            format!("{label}|{cells}|")
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -827,6 +1175,40 @@ mod tests {
             .riffs()
             .iter()
             .all(|riff| riff.has_tag("target_root")));
+    }
+
+    #[test]
+    fn live_mode_loads_yaml_profile_and_navigates_saved_tabs() {
+        let path =
+            std::env::temp_dir().join(format!("v-path-live-profile-{}.yml", std::process::id()));
+        std::fs::write(&path, crate::YAML_PROFILE_EXAMPLE).expect("test profile should write");
+
+        let mut app = App::with_live_profile_path(&path);
+
+        assert_eq!(app.live().profile().unwrap().song.title, "Example Tune");
+        assert!(app.live().status().contains("2 saved TAB"));
+        assert_eq!(app.live().selected_card(), 0);
+
+        app.menu_index = 1;
+        app.handle_key(key(KeyCode::Enter));
+        app.handle_key(key(KeyCode::Char('j')));
+        assert_eq!(app.live().selected_card(), 1);
+        app.handle_key(key(KeyCode::Char('k')));
+        assert_eq!(app.live().selected_card(), 0);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn saved_riff_renders_as_six_line_ascii_tab() {
+        let profile = SongProfile::from_yaml_str(crate::YAML_PROFILE_EXAMPLE).unwrap();
+        let riff = &profile.transitions[0].riffs[0];
+        let lines = render_saved_tab_lines(riff);
+
+        assert_eq!(lines.len(), 6);
+        assert_eq!(lines[0], "e|---------|");
+        assert_eq!(lines[2], "G|-------0-|");
+        assert_eq!(lines[3], "D|-0--2----|");
     }
 
     #[test]

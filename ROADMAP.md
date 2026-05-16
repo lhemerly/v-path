@@ -31,7 +31,7 @@ Current status: the strict music-theory domain model, standard-tuned fretboard c
   * Step-by-step chord progression builder.
   * Split pane: Left side shows chord transition, Right side shows scrollable list of generated TABs ranked by score.
   * Keyboard shortcuts (j/k to scroll, Enter to select, t to filter by tags).
-* \[ \] **Live Mode UI:**
+* [x] **Live Mode UI:**
   * Dynamic grid layout. Reads the YAML file and displays high-contrast, large-text ASCII tabs for the selected song.
   * Clean, distraction-free margin layout.
 

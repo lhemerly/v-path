@@ -56,6 +56,12 @@ To run from source:
 cargo run --release
 ```
 
+To open Live Mode with a saved YAML profile path preloaded, pass the `.yml` file as the first argument:
+
+```
+cargo run --release -- path/to/song.yml
+```
+
 
 # Current Engine Surface
 
@@ -74,7 +80,7 @@ The first implemented layers are the domain model, the MVP fretboard grid, the V
 - `find_paths`, `find_paths_in_range`, and `find_paths_with_limit`: V1 DFS helpers that walk local fretboard neighbors from Chord A pitch-class positions to Chord B root/3rd/5th targets.
 - `SongProfile`, `SongMetadata`, `Transition`, `SavedRiff`, and `Tuning`: serde-backed YAML/TOML persistence types, including multiple named riff variations per chord transition.
 - `PROFILE_SCHEMA_VERSION`, `YAML_PROFILE_EXAMPLE`, and `TOML_PROFILE_EXAMPLE`: canonical schema version and example profile shapes covered by serializer round-trip tests.
-- Ratatui/Crossterm TUI entry point with a main menu for Creator Mode vs Live Mode, plus a Creator Mode progression builder that generates, ranks, scrolls, filters, previews, and selects transition TABs.
+- Ratatui/Crossterm TUI entry point with a main menu for Creator Mode vs Live Mode, a Creator Mode progression builder that generates, ranks, scrolls, filters, previews, and selects transition TABs, and a Live Mode performance grid that loads YAML profiles into high-contrast ASCII TAB cards.
 
 # Saved Profile Schema
 
