@@ -19,7 +19,7 @@ Current status: the strict music-theory domain model, standard-tuned fretboard c
 *Goal: Allow users to save their curated riffs.*
 
 * \[x\] **Data Schema:** Define the YAML/TOML structure for saving Song, Transitions, and Riff objects.
-* \[ \] **Serialization:** Implement serde to read/write these profiles seamlessly.
+* \[x\] **Serialization:** Implement serde to read/write these profiles seamlessly.
 * \[x\] **Variation Support:** Ensure the schema supports multiple riffs for the same chord transition (e.g., D \-\> G (Verse) vs D \-\> G (Chorus)).
 
 ## **Phase 3: The TUI (Ratatui Implementation)**

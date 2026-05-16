@@ -1,5 +1,7 @@
 use std::{error::Error, fmt};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{Interval, Note, PitchClass};
 
 /// Number of strings on the MVP guitar fretboard.
@@ -41,10 +43,34 @@ impl Error for FretboardError {}
 ///
 /// `string` uses conventional guitar numbering (`1` = high E, `6` = low E).
 /// `fret` is zero for an open string and otherwise the physical fret number.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "RawPosition", into = "RawPosition")]
 pub struct Position {
     string: u8,
     fret: u8,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct RawPosition {
+    string: u8,
+    fret: u8,
+}
+
+impl TryFrom<RawPosition> for Position {
+    type Error = FretboardError;
+
+    fn try_from(value: RawPosition) -> Result<Self, Self::Error> {
+        Self::new(value.string, value.fret)
+    }
+}
+
+impl From<Position> for RawPosition {
+    fn from(value: Position) -> Self {
+        Self {
+            string: value.string,
+            fret: value.fret,
+        }
+    }
 }
 
 impl Position {

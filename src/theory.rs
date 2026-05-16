@@ -1,5 +1,7 @@
 use std::{cmp::Ordering, error::Error, fmt, str::FromStr};
 
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+
 /// The twelve pitch classes in 12-tone equal temperament.
 ///
 /// Enharmonic spellings are normalized to a single canonical variant so the
@@ -68,6 +70,25 @@ impl fmt::Display for PitchClass {
             Self::B => "B",
         };
         f.write_str(name)
+    }
+}
+
+impl Serialize for PitchClass {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for PitchClass {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        value.parse().map_err(de::Error::custom)
     }
 }
 
@@ -225,7 +246,8 @@ impl Interval {
 }
 
 /// Common chord formulas supported by the MVP engine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ChordQuality {
     Major,
     Minor,
@@ -278,7 +300,7 @@ impl ChordQuality {
 }
 
 /// A chord as a root pitch class and typed quality.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Chord {
     root: PitchClass,
     quality: ChordQuality,
@@ -307,7 +329,8 @@ impl Chord {
 }
 
 /// Scale formulas supported by the MVP engine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ScaleKind {
     Major,
     NaturalMinor,
@@ -365,7 +388,7 @@ impl ScaleKind {
 }
 
 /// A scale as a tonic pitch class and a typed scale formula.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Scale {
     tonic: PitchClass,
     kind: ScaleKind,
