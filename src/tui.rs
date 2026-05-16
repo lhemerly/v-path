@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    apply_musical_filters, find_paths_with_limit, Chord, ChordQuality, Fretboard, MusicalFilter,
-    PitchClass, Riff, SavedRiff, SongProfile, Transition,
+    apply_musical_filters, find_paths_with_limit, infer_fingering, Chord, ChordQuality, Fretboard,
+    MusicalFilter, PitchClass, Position, Riff, SavedRiff, SongProfile, Transition,
 };
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -761,16 +761,15 @@ fn render_riff_list(frame: &mut Frame<'_>, area: Rect, state: &CreatorState) {
             .iter()
             .enumerate()
             .map(|(index, riff)| {
-                ListItem::new(vec![
-                    Line::from(vec![
-                        Span::styled(
-                            format!("#{:02} score {:>3}", index + 1, riff.physical_cost()),
-                            Style::default().add_modifier(Modifier::BOLD),
-                        ),
-                        Span::raw(format!("  tags: {}", riff.tags().join(", "))),
-                    ]),
-                    Line::from(render_tab(riff)),
-                ])
+                let mut lines = vec![Line::from(vec![
+                    Span::styled(
+                        format!("#{:02} score {:>3}", index + 1, riff.physical_cost()),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(format!("  tags: {}", riff.tags().join(", "))),
+                ])];
+                lines.extend(render_riff_tab_lines(riff).into_iter().map(Line::from));
+                ListItem::new(lines)
             })
             .collect::<Vec<_>>()
     };
@@ -1020,28 +1019,28 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         .split(vertical[1])[1]
 }
 
-fn render_tab(riff: &Riff) -> String {
-    riff.sequence()
-        .iter()
-        .map(|position| format!("s{}f{}", position.string(), position.fret()))
-        .collect::<Vec<_>>()
-        .join(" → ")
+fn render_riff_tab_lines(riff: &Riff) -> Vec<String> {
+    render_tab_lines(riff.sequence(), riff.fingers())
 }
 
 fn render_saved_tab_lines(riff: &SavedRiff) -> Vec<String> {
-    let max_fret_width = riff
-        .positions()
+    let fingers = infer_fingering(riff.positions());
+    render_tab_lines(riff.positions(), &fingers)
+}
+
+fn render_tab_lines(positions: &[Position], fingers: &[Option<crate::Finger>]) -> Vec<String> {
+    let max_fret_width = positions
         .iter()
         .map(|position| position.fret().to_string().len())
         .max()
         .unwrap_or(1);
-    let silence = "-".repeat(max_fret_width + 2);
+    let cell_width = max_fret_width + 2;
+    let silence = "-".repeat(cell_width);
 
-    [(1, "e"), (2, "B"), (3, "G"), (4, "D"), (5, "A"), (6, "E")]
+    let mut lines = [(1, "e"), (2, "B"), (3, "G"), (4, "D"), (5, "A"), (6, "E")]
         .into_iter()
         .map(|(string, label)| {
-            let cells = riff
-                .positions()
+            let cells = positions
                 .iter()
                 .map(|position| {
                     if position.string() == string {
@@ -1057,7 +1056,42 @@ fn render_saved_tab_lines(riff: &SavedRiff) -> Vec<String> {
                 .collect::<String>();
             format!("{label}|{cells}|")
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    let fingering_cells = positions
+        .iter()
+        .zip(fingers.iter())
+        .map(|(position, finger)| {
+            let marker = finger
+                .map(|finger| finger.number().to_string())
+                .unwrap_or_else(|| {
+                    if position.fret() == 0 {
+                        "o".to_owned()
+                    } else {
+                        "?".to_owned()
+                    }
+                });
+            centered_cell(&marker, cell_width)
+        })
+        .collect::<String>();
+    lines.push(format!("F|{fingering_cells}|"));
+
+    lines
+}
+
+fn centered_cell(marker: &str, width: usize) -> String {
+    let marker_width = marker.len();
+    if marker_width >= width {
+        return marker.to_owned();
+    }
+
+    let left_padding = (width - marker_width) / 2;
+    let right_padding = width - marker_width - left_padding;
+    format!(
+        "{left}{marker}{right}",
+        left = " ".repeat(left_padding),
+        right = " ".repeat(right_padding)
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1259,15 +1293,16 @@ mod tests {
     }
 
     #[test]
-    fn saved_riff_renders_as_six_line_ascii_tab() {
+    fn saved_riff_renders_ascii_tab_with_fingering_line() {
         let profile = SongProfile::from_yaml_str(crate::YAML_PROFILE_EXAMPLE).unwrap();
         let riff = &profile.transitions[0].riffs[0];
         let lines = render_saved_tab_lines(riff);
 
-        assert_eq!(lines.len(), 6);
+        assert_eq!(lines.len(), 7);
         assert_eq!(lines[0], "e|---------|");
         assert_eq!(lines[2], "G|-------0-|");
         assert_eq!(lines[3], "D|-0--2----|");
+        assert_eq!(lines[6], "F| o  1  o |");
     }
 
     #[test]
