@@ -6,7 +6,7 @@ This roadmap defines the implementation sequence for v-path. We are prioritizing
 
 *Goal: Build the underlying logic that generates and scores riffs.*
 
-Current status: the strict music-theory domain model, standard-tuned fretboard coordinate system, first DFS pathfinding algorithm, physical distance scorer, and musical tag filters are implemented and covered by unit tests. The next Phase 1 milestone is complete; upcoming work moves into persistence.
+Current status: the strict music-theory domain model, standard-tuned fretboard coordinate system, first DFS pathfinding algorithm, physical distance scorer, and musical tag filters are implemented and covered by unit tests. Phase 1 is complete; upcoming work moves into persistence.
 
 * \[x\] **Domain Modeling:** Implement strict types for Note, PitchClass, Interval, Chord, and Scale.
 * \[x\] **Fretboard Coordinate System:** Map the 6 strings and 24 frets to a Cartesian grid (String, Fret). *Constraint: MVP strictly assumes Standard Tuning (EADGBE).*
