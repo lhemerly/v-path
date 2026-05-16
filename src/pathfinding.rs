@@ -58,6 +58,9 @@ impl MusicalFilter {
 pub const ANATOMICAL_STRETCH_PENALTY: u32 = 1_000;
 
 const MAX_COMFORTABLE_FRET_SPAN: u8 = 4;
+const FRETS_PER_HAND_BOX: u8 = 4;
+const MAX_NATURAL_FRET_SPAN_BUFFER: u8 = 2;
+const SOFT_FINGER_STRETCH_PENALTY: u32 = 10;
 
 /// A sequence of fretboard positions connecting two chords.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -529,10 +532,10 @@ pub fn physical_cost(path: &[Position]) -> u32 {
 }
 
 fn physical_cost_with_fingering(path: &[Position], fingers: &[Option<Finger>]) -> u32 {
-    movement_cost(path) + anatomical_cost_with_fingering(path, fingers)
+    physical_movement_cost(path) + anatomical_cost_with_fingering(path, fingers)
 }
 
-fn movement_cost(path: &[Position]) -> u32 {
+pub(crate) fn physical_movement_cost(path: &[Position]) -> u32 {
     path.windows(2)
         .map(|positions| {
             let current = positions[0];
@@ -547,32 +550,62 @@ fn movement_cost(path: &[Position]) -> u32 {
 
 /// Infers one fretting-hand finger per position in the path.
 ///
-/// Open strings return `None`; fretted notes map into a four-fret hand box from
-/// the lowest fretted note in the path, clamping wider reaches to the index or
-/// pinky so [`anatomical_cost`] can penalize them.
+/// Open strings return `None`; fretted notes map into a local four-fret hand box
+/// that can shift as the line moves, while abrupt reaches are clamped to the
+/// index or pinky so [`anatomical_cost`] can penalize them.
 pub fn infer_fingering(path: &[Position]) -> Vec<Option<Finger>> {
-    let Some(anchor_fret) = path
-        .iter()
-        .filter_map(|position| (position.fret() > 0).then_some(position.fret()))
-        .min()
-    else {
-        return vec![None; path.len()];
+    let mut hand_anchor = None;
+    let mut previous_finger = None;
+    let mut fingers = Vec::with_capacity(path.len());
+
+    for position in path {
+        if position.fret() == 0 {
+            previous_finger = None;
+            fingers.push(None);
+            continue;
+        }
+
+        let anchor = local_hand_anchor(position.fret(), hand_anchor, previous_finger);
+        hand_anchor = Some(anchor);
+
+        let finger = finger_for_fret_in_box(position.fret(), anchor);
+        previous_finger = Some(finger);
+        fingers.push(Some(finger));
+    }
+
+    fingers
+}
+
+fn local_hand_anchor(fret: u8, current_anchor: Option<u8>, previous_finger: Option<Finger>) -> u8 {
+    let Some(anchor) = current_anchor else {
+        return fret;
     };
 
-    path.iter()
-        .map(|position| {
-            if position.fret() == 0 {
-                return None;
-            }
+    let box_end = anchor + FRETS_PER_HAND_BOX - 1;
+    if fret < anchor {
+        if previous_finger == Some(Finger::Index) {
+            fret.saturating_sub(FRETS_PER_HAND_BOX - 1)
+        } else {
+            fret
+        }
+    } else if fret > box_end {
+        if previous_finger == Some(Finger::Pinky) {
+            fret
+        } else {
+            fret.saturating_sub(FRETS_PER_HAND_BOX - 1)
+        }
+    } else {
+        anchor
+    }
+}
 
-            Some(match position.fret().saturating_sub(anchor_fret) {
-                0 => Finger::Index,
-                1 => Finger::Middle,
-                2 => Finger::Ring,
-                _ => Finger::Pinky,
-            })
-        })
-        .collect()
+fn finger_for_fret_in_box(fret: u8, anchor: u8) -> Finger {
+    match fret.saturating_sub(anchor) {
+        0 => Finger::Index,
+        1 => Finger::Middle,
+        2 => Finger::Ring,
+        _ => Finger::Pinky,
+    }
 }
 
 /// Returns only the biomechanical penalty component for a path.
@@ -582,28 +615,22 @@ pub fn anatomical_cost(path: &[Position]) -> u32 {
 }
 
 fn anatomical_cost_with_fingering(path: &[Position], fingers: &[Option<Finger>]) -> u32 {
-    let fretted: Vec<_> = path
-        .iter()
+    path.iter()
         .zip(fingers.iter())
         .filter_map(|(position, finger)| finger.map(|finger| (*position, finger)))
-        .collect();
-
-    let mut cost = 0;
-    for current_index in 0..fretted.len() {
-        for next_index in current_index + 1..fretted.len() {
-            let (current_position, current_finger) = fretted[current_index];
-            let (next_position, next_finger) = fretted[next_index];
+        .collect::<Vec<_>>()
+        .windows(2)
+        .map(|fretted| {
+            let (current_position, current_finger) = fretted[0];
+            let (next_position, next_finger) = fretted[1];
 
             if current_finger == next_finger {
-                continue;
+                0
+            } else {
+                anatomical_pair_cost(current_position, current_finger, next_position, next_finger)
             }
-
-            cost +=
-                anatomical_pair_cost(current_position, current_finger, next_position, next_finger);
-        }
-    }
-
-    cost
+        })
+        .sum()
 }
 
 fn anatomical_pair_cost(
@@ -616,18 +643,14 @@ fn anatomical_pair_cost(
     let finger_span = current_finger.number().abs_diff(next_finger.number());
 
     let stretch_excess = fret_span.saturating_sub(MAX_COMFORTABLE_FRET_SPAN);
-    let crossed_fingers = (current_position.fret() < next_position.fret()
-        && current_finger.number() > next_finger.number())
-        || (current_position.fret() > next_position.fret()
-            && current_finger.number() < next_finger.number());
+
+    // Softly discourage finger pairs that reach beyond their natural spacing
+    // without being outright impossible. The buffer allows, for example, index
+    // to pinky over four frets before charging this smaller per-fret penalty.
+    let soft_stretch_excess = fret_span.saturating_sub(finger_span + MAX_NATURAL_FRET_SPAN_BUFFER);
 
     (stretch_excess as u32 * ANATOMICAL_STRETCH_PENALTY)
-        + if crossed_fingers {
-            ANATOMICAL_STRETCH_PENALTY
-        } else {
-            0
-        }
-        + (fret_span.saturating_sub(finger_span + 1).saturating_sub(1) as u32 * 10)
+        + (soft_stretch_excess as u32 * SOFT_FINGER_STRETCH_PENALTY)
 }
 
 #[cfg(test)]
@@ -918,14 +941,18 @@ mod tests {
     }
 
     #[test]
-    fn anatomical_cost_checks_the_full_riff_hand_span() {
-        let delayed_reach = vec![
-            Position::new(6, 2).expect("finger 1 fret should be valid"),
-            Position::new(6, 5).expect("intermediate fret should be valid"),
-            Position::new(6, 8).expect("finger 4 fret should be valid"),
+    fn anatomical_cost_allows_gradual_hand_shifts_across_a_longer_riff() {
+        let gradual_shift = vec![
+            Position::new(6, 2).expect("starting fret should be valid"),
+            Position::new(6, 3).expect("neighbor fret should be valid"),
+            Position::new(6, 4).expect("neighbor fret should be valid"),
+            Position::new(6, 5).expect("neighbor fret should be valid"),
+            Position::new(6, 6).expect("shifted fret should be valid"),
+            Position::new(6, 7).expect("shifted fret should be valid"),
+            Position::new(6, 8).expect("shifted fret should be valid"),
         ];
 
-        assert!(anatomical_cost(&delayed_reach) >= ANATOMICAL_STRETCH_PENALTY);
+        assert!(anatomical_cost(&gradual_shift) < ANATOMICAL_STRETCH_PENALTY);
     }
 
     #[test]
