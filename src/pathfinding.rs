@@ -320,9 +320,9 @@ fn build_riff(fretboard: Fretboard, path: &[Position], target_tone: TargetChordT
     );
 
     if last_note > first_note {
-        tags.push("ascending".to_owned());
+        tags.push("net_ascending".to_owned());
     } else if last_note < first_note {
-        tags.push("descending".to_owned());
+        tags.push("net_descending".to_owned());
     }
 
     Riff::new(path.to_vec(), tags)
