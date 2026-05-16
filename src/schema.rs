@@ -1,7 +1,7 @@
 //! Persistent profile schema for saved songs, chord transitions, and curated riffs.
 //!
-//! This module defines the in-memory shape that the upcoming serde layer will
-//! read from and write to YAML/TOML profile files. The schema deliberately uses
+//! This module defines the in-memory shape that serde reads from and writes to
+//! YAML/TOML profile files. The schema deliberately uses
 //! small, explicit objects so Creator Mode can save several named riff
 //! variations for the same chord transition and Live Mode can render them
 //! without re-running pathfinding.
@@ -79,6 +79,8 @@
 //!   { string = 3, fret = 0 },
 //! ]
 //! ```
+
+use serde::{de, Deserialize, Deserializer, Serialize};
 
 use crate::{physical_cost, Chord, Position, Riff, Scale};
 
@@ -184,7 +186,7 @@ positions = [
 /// progression. Multiple transitions may share the same `from`/`to` chords when
 /// a song needs section-specific choices, but the preferred representation is a
 /// single transition with multiple named [`SavedRiff`] variations.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SongProfile {
     pub schema_version: u16,
     pub song: SongMetadata,
@@ -201,12 +203,63 @@ impl SongProfile {
             transitions,
         }
     }
+
+    /// Reads a song profile from a YAML document.
+    pub fn from_yaml_str(input: &str) -> Result<Self, serde_yaml::Error> {
+        serde_yaml::from_str(input)
+    }
+
+    /// Writes a song profile as a YAML document.
+    pub fn to_yaml_string(&self) -> Result<String, serde_yaml::Error> {
+        serde_yaml::to_string(self)
+    }
+
+    /// Reads a song profile from a TOML document.
+    pub fn from_toml_str(input: &str) -> Result<Self, toml::de::Error> {
+        toml::from_str(input)
+    }
+
+    /// Writes a song profile as a pretty TOML document.
+    pub fn to_toml_string_pretty(&self) -> Result<String, toml::ser::Error> {
+        toml::to_string_pretty(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for SongProfile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct RawSongProfile {
+            schema_version: u16,
+            song: SongMetadata,
+            progression: Vec<Chord>,
+            transitions: Vec<Transition>,
+        }
+
+        let raw = RawSongProfile::deserialize(deserializer)?;
+        if raw.schema_version != PROFILE_SCHEMA_VERSION {
+            return Err(de::Error::custom(format!(
+                "unsupported profile schema_version {}; expected {}",
+                raw.schema_version, PROFILE_SCHEMA_VERSION
+            )));
+        }
+
+        Ok(Self {
+            schema_version: raw.schema_version,
+            song: raw.song,
+            progression: raw.progression,
+            transitions: raw.transitions,
+        })
+    }
 }
 
 /// Human-readable song metadata and global musical context.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SongMetadata {
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub artist: Option<String>,
     pub key: Scale,
     pub tuning: Tuning,
@@ -233,13 +286,14 @@ impl SongMetadata {
 /// The MVP engine supports standard tuning only, so the schema captures that
 /// assumption explicitly. This enum leaves room for backwards-compatible
 /// alternate-tuning support in a future schema version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Tuning {
     Standard,
 }
 
 /// A curated set of riff variations between two chords.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Transition {
     pub id: String,
     pub from: Chord,
@@ -265,13 +319,47 @@ impl Transition {
 /// `ending`. `physical_cost` is persisted so Live Mode can sort or display saved
 /// choices without recomputing engine scores, but constructors derive it from
 /// positions to avoid stale costs in newly-created profiles.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SavedRiff {
     name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     variation: Option<String>,
     positions: Vec<Position>,
     tags: Vec<String>,
     physical_cost: u32,
+}
+
+impl<'de> Deserialize<'de> for SavedRiff {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct RawSavedRiff {
+            name: String,
+            variation: Option<String>,
+            positions: Vec<Position>,
+            tags: Vec<String>,
+            physical_cost: u32,
+        }
+
+        let raw = RawSavedRiff::deserialize(deserializer)?;
+        let expected_cost = physical_cost(&raw.positions);
+        if raw.physical_cost != expected_cost {
+            return Err(de::Error::custom(format!(
+                "saved riff physical_cost {} does not match positions cost {}",
+                raw.physical_cost, expected_cost
+            )));
+        }
+
+        Ok(Self {
+            name: raw.name,
+            variation: raw.variation,
+            positions: raw.positions,
+            tags: raw.tags,
+            physical_cost: raw.physical_cost,
+        })
+    }
 }
 
 impl SavedRiff {
@@ -441,6 +529,82 @@ mod tests {
         assert_eq!(profile.transitions[0].riffs.len(), 2);
         assert_eq!(profile.transitions[0].riffs[0].variation(), Some("verse"));
         assert_eq!(profile.transitions[0].riffs[1].variation(), Some("chorus"));
+    }
+
+    #[test]
+    fn yaml_profile_example_round_trips_through_serde() {
+        let profile = SongProfile::from_yaml_str(YAML_PROFILE_EXAMPLE)
+            .expect("canonical YAML profile should deserialize");
+
+        assert_eq!(profile.schema_version, PROFILE_SCHEMA_VERSION);
+        assert_eq!(profile.song.title, "Example Tune");
+        assert_eq!(profile.progression.len(), 2);
+        assert_eq!(profile.transitions[0].riffs.len(), 2);
+        assert_eq!(
+            profile.transitions[0].riffs[0].positions()[2],
+            Position::new(3, 0).unwrap()
+        );
+
+        let serialized = profile
+            .to_yaml_string()
+            .expect("profile should serialize back to YAML");
+        let round_tripped = SongProfile::from_yaml_str(&serialized)
+            .expect("serialized YAML should deserialize again");
+
+        assert_eq!(round_tripped, profile);
+    }
+
+    #[test]
+    fn toml_profile_example_round_trips_through_serde() {
+        let profile = SongProfile::from_toml_str(TOML_PROFILE_EXAMPLE)
+            .expect("canonical TOML profile should deserialize");
+
+        assert_eq!(profile.song.key.tonic(), PitchClass::D);
+        assert_eq!(profile.transitions[0].from.root(), PitchClass::D);
+        assert_eq!(profile.transitions[0].to.root(), PitchClass::G);
+        assert_eq!(profile.transitions[0].riffs[1].variation(), Some("chorus"));
+
+        let serialized = profile
+            .to_toml_string_pretty()
+            .expect("profile should serialize back to TOML");
+        let round_tripped = SongProfile::from_toml_str(&serialized)
+            .expect("serialized TOML should deserialize again");
+
+        assert_eq!(round_tripped, profile);
+    }
+
+    #[test]
+    fn deserialization_rejects_future_schema_versions() {
+        let future_profile =
+            YAML_PROFILE_EXAMPLE.replacen("schema_version: 1", "schema_version: 2", 1);
+
+        let error = SongProfile::from_yaml_str(&future_profile)
+            .expect_err("future profile versions should be rejected");
+
+        assert!(error
+            .to_string()
+            .contains("unsupported profile schema_version 2"));
+    }
+
+    #[test]
+    fn deserialization_rejects_stale_saved_riff_costs() {
+        let stale_cost = YAML_PROFILE_EXAMPLE.replacen("physical_cost: 9", "physical_cost: 99", 1);
+
+        let error = SongProfile::from_yaml_str(&stale_cost)
+            .expect_err("stale saved riff costs should be rejected");
+
+        assert!(error.to_string().contains("does not match positions cost"));
+    }
+
+    #[test]
+    fn deserialization_validates_fretboard_positions() {
+        let bad_position =
+            YAML_PROFILE_EXAMPLE.replacen("string: 4, fret: 0", "string: 7, fret: 0", 1);
+
+        let error = SongProfile::from_yaml_str(&bad_position)
+            .expect_err("invalid fretboard coordinates should be rejected");
+
+        assert!(error.to_string().contains("outside the supported range"));
     }
 
     #[test]

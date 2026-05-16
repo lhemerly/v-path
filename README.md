@@ -72,8 +72,8 @@ The first implemented layers are the domain model, the MVP fretboard grid, the V
 - `physical_cost`, `RiffScorer`, and `PhysicalDistanceScorer`: physical ranking primitives where adjacent fret movement stays cheap and large fret jumps are penalized quadratically while string crossing remains linear.
 - `annotate_musical_tags`, `MusicalFilter`, and `apply_musical_filters`: musical filtering primitives for keeping riffs with derived tags such as `contains_third` or `contains_sixth`, or for requiring strict diatonic walks inside a supplied `Scale`.
 - `find_paths`, `find_paths_in_range`, and `find_paths_with_limit`: V1 DFS helpers that walk local fretboard neighbors from Chord A pitch-class positions to Chord B root/3rd/5th targets.
-- `SongProfile`, `SongMetadata`, `Transition`, `SavedRiff`, and `Tuning`: schema types for the upcoming YAML/TOML persistence layer, including multiple named riff variations per chord transition.
-- `PROFILE_SCHEMA_VERSION`, `YAML_PROFILE_EXAMPLE`, and `TOML_PROFILE_EXAMPLE`: canonical schema version and example profile shapes for serializer implementation.
+- `SongProfile`, `SongMetadata`, `Transition`, `SavedRiff`, and `Tuning`: serde-backed YAML/TOML persistence types, including multiple named riff variations per chord transition.
+- `PROFILE_SCHEMA_VERSION`, `YAML_PROFILE_EXAMPLE`, and `TOML_PROFILE_EXAMPLE`: canonical schema version and example profile shapes covered by serializer round-trip tests.
 
 # Saved Profile Schema
 
@@ -120,7 +120,7 @@ transitions:
           - { string: 3, fret: 0 }
 ```
 
-Equivalent TOML files use the same field names with `[[progression]]`, `[[transitions]]`, and `[[transitions.riffs]]` arrays of tables. Serialization is intentionally left for the next persistence milestone.
+Equivalent TOML files use the same field names with `[[progression]]`, `[[transitions]]`, and `[[transitions.riffs]]` arrays of tables. `SongProfile::from_yaml_str`, `SongProfile::to_yaml_string`, `SongProfile::from_toml_str`, and `SongProfile::to_toml_string_pretty` provide the current read/write API.
 
 Run the engine tests with:
 
