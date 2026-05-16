@@ -14,8 +14,10 @@ pub use fretboard::{
 };
 
 pub use pathfinding::{
-    find_paths, find_paths_in_range, find_paths_with_limit, physical_cost, PathfindingError,
-    PhysicalDistanceScorer, Riff, RiffScorer, TargetChordTone, DEFAULT_MAX_PATHS, MAX_PATH_NOTES,
+    annotate_musical_tags, apply_musical_filters, find_paths, find_paths_in_range,
+    find_paths_with_limit, physical_cost, MusicalFilter, PathfindingError, PhysicalDistanceScorer,
+    Riff, RiffScorer, TargetChordTone, DEFAULT_MAX_PATHS, MAX_PATH_NOTES, TAG_CONTAINS_SIXTH,
+    TAG_CONTAINS_THIRD, TAG_STRICT_DIATONIC,
 };
 
 pub use theory::{
