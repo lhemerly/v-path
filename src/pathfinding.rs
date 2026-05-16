@@ -646,6 +646,52 @@ mod tests {
     }
 
     #[test]
+    fn musical_filters_keep_riffs_with_any_matching_tag() {
+        let fretboard = Fretboard::standard();
+        let third_riff = Riff::new(
+            vec![
+                Position::new(6, 0).expect("E2 should be valid"),
+                Position::new(6, 3).expect("G2 should be valid"),
+            ],
+            vec![TAG_CONTAINS_THIRD.to_owned()],
+        );
+        let sixth_riff = Riff::new(
+            vec![
+                Position::new(6, 0).expect("E2 should be valid"),
+                Position::new(5, 4).expect("C#3 should be valid"),
+            ],
+            vec![TAG_CONTAINS_SIXTH.to_owned()],
+        );
+        let target_only_riff = Riff::new(
+            vec![
+                Position::new(5, 3).expect("C3 should be valid"),
+                Position::new(5, 5).expect("D3 should be valid"),
+            ],
+            vec!["target_root".to_owned()],
+        );
+
+        let filtered = apply_musical_filters(
+            fretboard,
+            vec![
+                third_riff.clone(),
+                sixth_riff.clone(),
+                target_only_riff.clone(),
+            ],
+            &[MusicalFilter::any_tag([TAG_CONTAINS_SIXTH, "target_root"])],
+        );
+
+        assert_eq!(filtered, vec![sixth_riff, target_only_riff]);
+
+        let no_match = apply_musical_filters(
+            fretboard,
+            vec![third_riff],
+            &[MusicalFilter::any_tag(["chromatic", "pedal_point"])],
+        );
+
+        assert!(no_match.is_empty());
+    }
+
+    #[test]
     fn strict_diatonic_filter_keeps_scale_walks_and_adds_a_tag() {
         let fretboard = Fretboard::standard();
         let diatonic_riff = Riff::new(
