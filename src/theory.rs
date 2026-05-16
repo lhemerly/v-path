@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, str::FromStr};
+use std::{cmp::Ordering, error::Error, fmt, str::FromStr};
 
 /// The twelve pitch classes in 12-tone equal temperament.
 ///
@@ -113,7 +113,7 @@ impl fmt::Display for NoteError {
 impl Error for NoteError {}
 
 /// An absolute note with a pitch class and scientific-pitch octave.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Note {
     pitch_class: PitchClass,
     octave: i8,
@@ -157,6 +157,18 @@ impl Note {
 impl fmt::Display for Note {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{}", self.pitch_class, self.octave)
+    }
+}
+
+impl Ord for Note {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.midi_number().cmp(&other.midi_number())
+    }
+}
+
+impl PartialOrd for Note {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -405,6 +417,15 @@ mod tests {
                 .midi_number(),
             60
         );
+    }
+
+    #[test]
+    fn notes_sort_by_absolute_pitch_not_pitch_class() {
+        let c_sharp_zero = Note::new(PitchClass::CSharp, 0).expect("C#0 should be valid");
+        let c_five = Note::new(PitchClass::C, 5).expect("C5 should be valid");
+
+        assert!(c_sharp_zero < c_five);
+        assert_eq!(c_sharp_zero.cmp(&c_five), Ordering::Less);
     }
 
     #[test]
