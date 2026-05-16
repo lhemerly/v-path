@@ -26,8 +26,8 @@ Current status: the strict music-theory domain model, standard-tuned fretboard c
 
 *Goal: Build the dual-mode interface.*
 
-* \[ \] **Main Menu:** Simple selection between "Creator Mode" and "Live Mode".
-* \[ \] **Creator Mode UI:**
+* [x] **Main Menu:** Simple selection between "Creator Mode" and "Live Mode".
+* [x] **Creator Mode UI:**
   * Step-by-step chord progression builder.
   * Split pane: Left side shows chord transition, Right side shows scrollable list of generated TABs ranked by score.
   * Keyboard shortcuts (j/k to scroll, Enter to select, t to filter by tags).
