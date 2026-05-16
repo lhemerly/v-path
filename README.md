@@ -46,7 +46,7 @@ v-path doesn't use a static database of "cool licks." It calculates them on the 
 
 # Getting Started
 
-The core crate now exposes strict music-theory domain types for `Note`, `PitchClass`, `Interval`, `Chord`, and `Scale`. These types live in `src/theory.rs` and are re-exported from `v_path`, giving future fretboard and pathfinding code validated building blocks instead of raw strings or integers.
+The core crate now exposes strict music-theory domain types for `Note`, `PitchClass`, `Interval`, `Chord`, and `Scale`, plus a standard-tuned fretboard coordinate system via `Position` and `Fretboard`. These types live in `src/theory.rs` and `src/fretboard.rs` and are re-exported from `v_path`, giving future pathfinding code validated building blocks instead of raw strings or integers.
 
 (Installation instructions to be added upon release of v0.1.0)
 
@@ -59,13 +59,15 @@ cargo run --release
 
 # Current Engine Surface
 
-The first implemented layer is the domain model:
+The first implemented layers are the domain model and the MVP fretboard grid:
 
 - `PitchClass`: canonical twelve-tone pitch classes with enharmonic parsing and transposition.
 - `Note`: an absolute pitch-class plus octave value using scientific pitch notation, constrained to the supported octave range.
 - `Interval`: a validated non-negative semitone distance capped at two octaves for MVP-scale generation.
 - `Chord`: a root plus typed `ChordQuality`, expandable to pitch classes.
 - `Scale`: a tonic plus typed `ScaleKind`, expandable to pitch classes with membership checks for diatonic filtering.
+- `Position`: a validated `(String, Fret)` coordinate where strings are `1..=6` and frets are `0..=24`.
+- `Fretboard`: a 6-string, 24-fret standard-tuned guitar grid only; open strings are EADGBE from low to high pitch (`6=E2`, `5=A2`, `4=D3`, `3=G3`, `2=B3`, `1=E4`).
 
 Run the domain model tests with:
 
