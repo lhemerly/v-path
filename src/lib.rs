@@ -6,10 +6,16 @@
 //! without repeatedly validating theory invariants.
 
 pub mod fretboard;
+pub mod pathfinding;
 pub mod theory;
 
 pub use fretboard::{
     Fretboard, FretboardError, Position, MAX_FRET, MAX_STRING, MIN_FRET, MIN_STRING, STRING_COUNT,
+};
+
+pub use pathfinding::{
+    find_paths, find_paths_in_range, find_paths_with_limit, PathfindingError, Riff,
+    TargetChordTone, DEFAULT_MAX_PATHS, MAX_PATH_NOTES,
 };
 
 pub use theory::{
