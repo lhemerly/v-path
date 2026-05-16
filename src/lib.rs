@@ -7,6 +7,7 @@
 
 pub mod fretboard;
 pub mod pathfinding;
+pub mod schema;
 pub mod theory;
 
 pub use fretboard::{
@@ -18,6 +19,11 @@ pub use pathfinding::{
     find_paths_with_limit, physical_cost, MusicalFilter, PathfindingError, PhysicalDistanceScorer,
     Riff, RiffScorer, TargetChordTone, DEFAULT_MAX_PATHS, MAX_PATH_NOTES, TAG_CONTAINS_SIXTH,
     TAG_CONTAINS_THIRD, TAG_STRICT_DIATONIC,
+};
+
+pub use schema::{
+    SavedRiff, SongMetadata, SongProfile, Transition, Tuning, PROFILE_SCHEMA_VERSION,
+    TOML_PROFILE_EXAMPLE, YAML_PROFILE_EXAMPLE,
 };
 
 pub use theory::{

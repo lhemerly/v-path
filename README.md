@@ -59,7 +59,7 @@ cargo run --release
 
 # Current Engine Surface
 
-The first implemented layers are the domain model, the MVP fretboard grid, and the V1 pathfinding engine:
+The first implemented layers are the domain model, the MVP fretboard grid, the V1 pathfinding engine, and the saved-profile data schema:
 
 - `PitchClass`: canonical twelve-tone pitch classes with enharmonic parsing and transposition.
 - `Note`: an absolute pitch-class plus octave value using scientific pitch notation, constrained to the supported octave range.
@@ -72,6 +72,55 @@ The first implemented layers are the domain model, the MVP fretboard grid, and t
 - `physical_cost`, `RiffScorer`, and `PhysicalDistanceScorer`: physical ranking primitives where adjacent fret movement stays cheap and large fret jumps are penalized quadratically while string crossing remains linear.
 - `annotate_musical_tags`, `MusicalFilter`, and `apply_musical_filters`: musical filtering primitives for keeping riffs with derived tags such as `contains_third` or `contains_sixth`, or for requiring strict diatonic walks inside a supplied `Scale`.
 - `find_paths`, `find_paths_in_range`, and `find_paths_with_limit`: V1 DFS helpers that walk local fretboard neighbors from Chord A pitch-class positions to Chord B root/3rd/5th targets.
+- `SongProfile`, `SongMetadata`, `Transition`, `SavedRiff`, and `Tuning`: schema types for the upcoming YAML/TOML persistence layer, including multiple named riff variations per chord transition.
+- `PROFILE_SCHEMA_VERSION`, `YAML_PROFILE_EXAMPLE`, and `TOML_PROFILE_EXAMPLE`: canonical schema version and example profile shapes for serializer implementation.
+
+# Saved Profile Schema
+
+v-path profiles are versioned song documents. The canonical shape is available from the library as `YAML_PROFILE_EXAMPLE` and `TOML_PROFILE_EXAMPLE`; both forms save the same objects:
+
+- `schema_version`: currently `1`, used to reject unsupported future profile formats.
+- `song`: title, optional artist, global key, and MVP `standard` tuning.
+- `progression`: the song-level chord sequence.
+- `transitions`: curated `from`/`to` chord movements, each with one or more saved riffs.
+- `riffs`: named variations such as `verse` and `chorus`, with tags, derived physical cost, and fretboard `positions` using conventional guitar string numbers (`1` high E through `6` low E).
+
+Minimal YAML example:
+
+```yaml
+schema_version: 1
+song:
+  title: "Example Tune"
+  artist: "v-path"
+  key:
+    tonic: D
+    kind: major
+  tuning: standard
+progression:
+  - root: D
+    quality: major
+  - root: G
+    quality: major
+transitions:
+  - id: d_to_g
+    from:
+      root: D
+      quality: major
+    to:
+      root: G
+      quality: major
+    riffs:
+      - name: Verse walk-up
+        variation: verse
+        tags: [target_root, net_ascending]
+        physical_cost: 9
+        positions:
+          - { string: 4, fret: 0 }
+          - { string: 4, fret: 2 }
+          - { string: 3, fret: 0 }
+```
+
+Equivalent TOML files use the same field names with `[[progression]]`, `[[transitions]]`, and `[[transitions.riffs]]` arrays of tables. Serialization is intentionally left for the next persistence milestone.
 
 Run the engine tests with:
 
