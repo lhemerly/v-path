@@ -5,11 +5,16 @@
 //! integers. Higher-level graph and pathfinding code can build on these types
 //! without repeatedly validating theory invariants.
 
+pub mod fingering;
 pub mod fretboard;
 pub mod pathfinding;
 pub mod schema;
 pub mod theory;
 pub mod tui;
+
+pub use fingering::{
+    AnchorFinger, Finger, HandState, HandStateError, HandStateMachine, HandTransition,
+};
 
 pub use fretboard::{
     Fretboard, FretboardError, Position, MAX_FRET, MAX_STRING, MIN_FRET, MIN_STRING, STRING_COUNT,
