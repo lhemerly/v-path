@@ -14,8 +14,8 @@ pub use fretboard::{
 };
 
 pub use pathfinding::{
-    find_paths, find_paths_in_range, find_paths_with_limit, PathfindingError, Riff,
-    TargetChordTone, DEFAULT_MAX_PATHS, MAX_PATH_NOTES,
+    find_paths, find_paths_in_range, find_paths_with_limit, physical_cost, PathfindingError,
+    PhysicalDistanceScorer, Riff, RiffScorer, TargetChordTone, DEFAULT_MAX_PATHS, MAX_PATH_NOTES,
 };
 
 pub use theory::{
