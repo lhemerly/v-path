@@ -1117,21 +1117,6 @@ pub fn parse_chord(input: &str) -> Result<Chord, ChordParseError> {
     Ok(Chord::new(pitch, quality))
 }
 
-impl std::fmt::Display for Chord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let suffix = match self.quality() {
-            ChordQuality::Major => "",
-            ChordQuality::Minor => "m",
-            ChordQuality::Diminished => "dim",
-            ChordQuality::Augmented => "aug",
-            ChordQuality::DominantSeventh => "7",
-            ChordQuality::MajorSeventh => "maj7",
-            ChordQuality::MinorSeventh => "m7",
-        };
-        write!(f, "{}{}", self.root(), suffix)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

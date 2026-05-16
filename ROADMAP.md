@@ -6,7 +6,7 @@ This roadmap defines the implementation sequence for v-path. We are prioritizing
 
 *Goal: Build the underlying logic that generates and scores riffs.*
 
-Current status: the strict music-theory domain model, standard-tuned fretboard coordinate system, first DFS pathfinding algorithm, physical distance scorer, and musical tag filters are implemented and covered by unit tests. Phase 1 is complete; upcoming work moves into persistence.
+Current status: the strict music-theory domain model, standard-tuned fretboard coordinate system, first DFS pathfinding algorithm, physical distance scorer, musical tag filters, persistence schema, TUI workflows, and initial hand-state anchor tracking are implemented and covered by unit tests. Phase 1 through Phase 3 are complete; Phase 4 is underway.
 
 * \[x\] **Domain Modeling:** Implement strict types for Note, PitchClass, Interval, Chord, and Scale.
 * \[x\] **Fretboard Coordinate System:** Map the 6 strings and 24 frets to a Cartesian grid (String, Fret). *Constraint: MVP strictly assumes Standard Tuning (EADGBE).*
@@ -39,7 +39,7 @@ Current status: the strict music-theory domain model, standard-tuned fretboard c
 
 *Goal: Tell the user exactly which finger to use.*
 
-* \[ \] **Hand State Machine:** Track the anchor fingers of the current chord.
+* \[x\] **Hand State Machine:** Track the anchor fingers of the current chord.
 * \[ \] **Anatomical Constraints:** Update the A\* algorithm to include Finger (1..4). Add heavy penalties for physically impossible stretches (e.g., Finger 1 on Fret 2, Finger 4 on Fret 8).
 * \[ \] **TAB Update:** Render suggested fingering below the ASCII TAB strings.
 

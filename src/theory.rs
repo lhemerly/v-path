@@ -258,6 +258,22 @@ pub enum ChordQuality {
     MinorSeventh,
 }
 
+impl fmt::Display for ChordQuality {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::Major => "major",
+            Self::Minor => "minor",
+            Self::Diminished => "diminished",
+            Self::Augmented => "augmented",
+            Self::DominantSeventh => "dominant seventh",
+            Self::MajorSeventh => "major seventh",
+            Self::MinorSeventh => "minor seventh",
+        };
+
+        f.write_str(name)
+    }
+}
+
 impl ChordQuality {
     pub const fn intervals(self) -> &'static [Interval] {
         match self {
@@ -304,6 +320,22 @@ impl ChordQuality {
 pub struct Chord {
     root: PitchClass,
     quality: ChordQuality,
+}
+
+impl fmt::Display for Chord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let suffix = match self.quality {
+            ChordQuality::Major => "",
+            ChordQuality::Minor => "m",
+            ChordQuality::Diminished => "dim",
+            ChordQuality::Augmented => "aug",
+            ChordQuality::DominantSeventh => "7",
+            ChordQuality::MajorSeventh => "maj7",
+            ChordQuality::MinorSeventh => "m7",
+        };
+
+        write!(f, "{}{}", self.root, suffix)
+    }
 }
 
 impl Chord {
@@ -463,6 +495,27 @@ mod tests {
         assert_eq!(
             chord.pitch_classes(),
             vec![PitchClass::D, PitchClass::F, PitchClass::A, PitchClass::C]
+        );
+    }
+
+    #[test]
+    fn chord_quality_display_uses_user_facing_names() {
+        assert_eq!(
+            ChordQuality::DominantSeventh.to_string(),
+            "dominant seventh"
+        );
+        assert_eq!(ChordQuality::Major.to_string(), "major");
+    }
+
+    #[test]
+    fn chord_display_uses_compact_guitar_symbols() {
+        assert_eq!(
+            Chord::new(PitchClass::G, ChordQuality::DominantSeventh).to_string(),
+            "G7"
+        );
+        assert_eq!(
+            Chord::new(PitchClass::CSharp, ChordQuality::Major).to_string(),
+            "C#"
         );
     }
 
