@@ -7,7 +7,8 @@ use std::{
 
 use crate::{
     apply_musical_filters, find_paths_with_limit, infer_fingering, Chord, ChordQuality, Fretboard,
-    MusicalFilter, PitchClass, Position, Riff, SavedRiff, SongProfile, Transition,
+    MusicalFilter, PitchClass, Position, Riff, SavedRiff, Scale, ScaleKind, SongMetadata,
+    SongProfile, Transition,
 };
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -44,6 +45,9 @@ pub enum MainMenuChoice {
 enum CreatorPrompt {
     Chord,
     TagFilter,
+    SaveTitle,
+    SavePath,
+    LoadPath,
 }
 
 #[derive(Debug, Clone)]
@@ -80,7 +84,10 @@ pub struct CreatorState {
     transition_index: usize,
     riffs: Vec<Riff>,
     selected_riff: usize,
-    saved_riff: Option<Riff>,
+    saved_riffs: std::collections::HashMap<usize, Riff>,
+    save_title_input: String,
+    save_path_input: String,
+    load_path_input: String,
     status: String,
 }
 
@@ -178,6 +185,13 @@ impl LiveState {
         }
     }
 
+    fn reload_if_loaded(&mut self) {
+        let raw = self.profile_path_input.trim().to_owned();
+        if !raw.is_empty() {
+            self.load_yaml_profile(Path::new(&raw));
+        }
+    }
+
     fn load_profile_from_input(&mut self) {
         let raw = self.profile_path_input.trim().to_owned();
         if raw.is_empty() {
@@ -224,7 +238,10 @@ impl CreatorState {
             transition_index: 0,
             riffs: Vec::new(),
             selected_riff: 0,
-            saved_riff: None,
+            saved_riffs: std::collections::HashMap::new(),
+            save_title_input: String::new(),
+            save_path_input: String::new(),
+            load_path_input: String::new(),
             status: "Type a chord such as D, Gm, A7, Cmaj7, or Bdim; Enter adds it.".to_owned(),
         }
     }
@@ -339,9 +356,9 @@ impl CreatorState {
     fn select_riff(&mut self) {
         if let Some(riff) = self.riffs.get(self.selected_riff).cloned() {
             let cost = riff.physical_cost();
-            self.saved_riff = Some(riff);
+            self.saved_riffs.insert(self.transition_index, riff);
             self.status = format!(
-                "Selected TAB #{} with score {cost}.",
+                "Selected TAB #{} with score {cost}. Press s to save the song profile to YAML.",
                 self.selected_riff + 1
             );
         } else if self.current_transition().is_some() {
@@ -350,6 +367,166 @@ impl CreatorState {
         } else {
             self.status = "Add at least two chords before selecting a generated TAB.".to_owned();
         }
+    }
+
+    fn start_save(&mut self) {
+        if self.progression.len() < 2 {
+            self.status = "Add at least two chords before saving a song profile.".to_owned();
+            return;
+        }
+        if self.saved_riffs.is_empty() {
+            self.status =
+                "Select at least one TAB (Enter) before saving a song profile.".to_owned();
+            return;
+        }
+        if !self.save_title_input.trim().is_empty() && !self.save_path_input.trim().is_empty() {
+            self.apply_save();
+        } else {
+            self.start_save_as();
+        }
+    }
+
+    fn start_save_as(&mut self) {
+        if self.progression.len() < 2 {
+            self.status = "Add at least two chords before saving a song profile.".to_owned();
+            return;
+        }
+        if self.saved_riffs.is_empty() {
+            self.status =
+                "Select at least one TAB (Enter) before saving a song profile.".to_owned();
+            return;
+        }
+        self.save_path_input.clear();
+        self.prompt = CreatorPrompt::SaveTitle;
+        self.status = "Enter a song title and press Enter. Esc cancels.".to_owned();
+    }
+
+    fn apply_save_title(&mut self) {
+        let title = self.save_title_input.trim().to_owned();
+        if title.is_empty() {
+            self.status = "Song title cannot be empty.".to_owned();
+            return;
+        }
+        self.prompt = CreatorPrompt::SavePath;
+        self.status = format!(
+            "Enter a file path to save '{title}' as YAML, e.g. ~/song.yml. Esc cancels."
+        );
+    }
+
+    fn apply_save(&mut self) {
+        let raw_path = self.save_path_input.trim().to_owned();
+        if raw_path.is_empty() {
+            self.status = "Enter a file path before saving.".to_owned();
+            return;
+        }
+
+        let title = self.save_title_input.trim().to_owned();
+        let transitions: Vec<Transition> = self
+            .progression
+            .windows(2)
+            .enumerate()
+            .filter_map(|(i, pair)| {
+                let riff = self.saved_riffs.get(&i)?;
+                let from = pair[0];
+                let to = pair[1];
+                let id = format!("{from}_to_{to}")
+                    .to_lowercase()
+                    .replace([' ', '#'], "_");
+                let saved = SavedRiff::from_riff(format!("TAB {}", i + 1), None, riff);
+                Some(Transition::new(id, from, to, vec![saved]))
+            })
+            .collect();
+
+        let key = Scale::new(PitchClass::C, ScaleKind::Major);
+        let metadata = SongMetadata::new(title.clone(), key);
+        let profile = SongProfile::new(metadata, self.progression.clone(), transitions);
+
+        let yaml = match profile.to_yaml_string() {
+            Ok(yaml) => yaml,
+            Err(error) => {
+                self.status = format!("Could not serialize profile: {error}");
+                self.prompt = CreatorPrompt::Chord;
+                return;
+            }
+        };
+
+        self.prompt = CreatorPrompt::Chord;
+        match fs::write(&raw_path, yaml) {
+            Ok(()) => {
+                self.status =
+                    format!("Saved '{title}' to '{raw_path}'. Load it in Live Mode with v-path --live {raw_path}");
+            }
+            Err(error) => {
+                self.status = format!("Could not write to '{raw_path}': {error}");
+            }
+        }
+    }
+
+    fn start_load(&mut self) {
+        self.prompt = CreatorPrompt::LoadPath;
+        self.load_path_input.clear();
+        self.status = "Enter a YAML profile path to load for editing and press Enter. Esc cancels."
+            .to_owned();
+    }
+
+    fn apply_load(&mut self) {
+        let raw_path = self.load_path_input.trim().to_owned();
+        if raw_path.is_empty() {
+            self.status = "Enter a file path before loading.".to_owned();
+            return;
+        }
+
+        let input = match fs::read_to_string(&raw_path) {
+            Ok(s) => s,
+            Err(error) => {
+                self.status = format!("Could not read '{raw_path}': {error}");
+                self.prompt = CreatorPrompt::Chord;
+                return;
+            }
+        };
+
+        let profile = match SongProfile::from_yaml_str(&input) {
+            Ok(p) => p,
+            Err(error) => {
+                self.status = format!("Could not parse '{raw_path}': {error}");
+                self.prompt = CreatorPrompt::Chord;
+                return;
+            }
+        };
+
+        // Restore progression and per-transition saved riffs.
+        self.progression = profile.progression.clone();
+        self.saved_riffs.clear();
+        for (i, pair) in profile.progression.windows(2).enumerate() {
+            let from = pair[0];
+            let to = pair[1];
+            if let Some(transition) = profile
+                .transitions
+                .iter()
+                .find(|t| t.from == from && t.to == to)
+            {
+                if let Some(saved) = transition.riffs.first() {
+                    let riff = Riff::new(saved.positions().to_vec(), saved.tags().to_vec());
+                    self.saved_riffs.insert(i, riff);
+                }
+            }
+        }
+
+        // Pre-fill save fields so editing and re-saving is one step.
+        self.save_title_input = profile.song.title.clone();
+        self.save_path_input = raw_path.clone();
+
+        self.transition_index = 0;
+        self.chord_input.clear();
+        self.tag_filter = None;
+        self.prompt = CreatorPrompt::Chord;
+        self.refresh_riffs();
+        self.status = format!(
+            "Loaded '{}' with {} chord(s) and {} saved TAB(s). Edit as normal; press s to save.",
+            profile.song.title,
+            profile.progression.len(),
+            self.saved_riffs.len(),
+        );
     }
 
     fn move_transition_next(&mut self) {
@@ -442,7 +619,10 @@ impl App {
             KeyCode::Enter => {
                 self.mode = match self.selected_menu_choice() {
                     MainMenuChoice::CreatorMode => AppMode::Creator,
-                    MainMenuChoice::LiveMode => AppMode::Live,
+                    MainMenuChoice::LiveMode => {
+                        self.live.reload_if_loaded();
+                        AppMode::Live
+                    }
                 }
             }
             _ => {}
@@ -467,6 +647,57 @@ impl App {
             return;
         }
 
+        if self.creator.prompt == CreatorPrompt::SaveTitle {
+            match key.code {
+                KeyCode::Esc => {
+                    self.creator.prompt = CreatorPrompt::Chord;
+                    self.creator.save_title_input.clear();
+                    self.creator.status = "Save cancelled.".to_owned();
+                }
+                KeyCode::Enter => self.creator.apply_save_title(),
+                KeyCode::Backspace => {
+                    self.creator.save_title_input.pop();
+                }
+                KeyCode::Char(c) => self.creator.save_title_input.push(c),
+                _ => {}
+            }
+            return;
+        }
+
+        if self.creator.prompt == CreatorPrompt::SavePath {
+            match key.code {
+                KeyCode::Esc => {
+                    self.creator.prompt = CreatorPrompt::Chord;
+                    self.creator.save_path_input.clear();
+                    self.creator.status = "Save cancelled.".to_owned();
+                }
+                KeyCode::Enter => self.creator.apply_save(),
+                KeyCode::Backspace => {
+                    self.creator.save_path_input.pop();
+                }
+                KeyCode::Char(c) => self.creator.save_path_input.push(c),
+                _ => {}
+            }
+            return;
+        }
+
+        if self.creator.prompt == CreatorPrompt::LoadPath {
+            match key.code {
+                KeyCode::Esc => {
+                    self.creator.prompt = CreatorPrompt::Chord;
+                    self.creator.load_path_input.clear();
+                    self.creator.status = "Open cancelled.".to_owned();
+                }
+                KeyCode::Enter => self.creator.apply_load(),
+                KeyCode::Backspace => {
+                    self.creator.load_path_input.pop();
+                }
+                KeyCode::Char(c) => self.creator.load_path_input.push(c),
+                _ => {}
+            }
+            return;
+        }
+
         match key.code {
             KeyCode::Esc => self.mode = AppMode::MainMenu,
             KeyCode::Char('q') => self.should_quit = true,
@@ -476,6 +707,9 @@ impl App {
             KeyCode::Char('l') | KeyCode::Right => self.creator.move_transition_next(),
             KeyCode::Char('t') => self.creator.start_tag_filter(),
             KeyCode::Char('T') => self.creator.clear_tag_filter(),
+            KeyCode::Char('s') => self.creator.start_save(),
+            KeyCode::Char('S') => self.creator.start_save_as(),
+            KeyCode::Char('o') => self.creator.start_load(),
             KeyCode::Enter => {
                 if self.creator.chord_input.trim().is_empty() {
                     self.creator.select_riff();
@@ -511,6 +745,7 @@ impl App {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('i') => self.live.edit_path(),
             KeyCode::Tab => self.live.edit_path(),
+            KeyCode::Char('r') => self.live.reload_if_loaded(),
             KeyCode::Char('j') | KeyCode::Down => self.live.move_selection_down(),
             KeyCode::Char('k') | KeyCode::Up => self.live.move_selection_up(),
             _ => {}
@@ -677,10 +912,16 @@ fn render_creator_header(frame: &mut Frame<'_>, area: Rect, state: &CreatorState
     let prompt_title = match state.prompt {
         CreatorPrompt::Chord => " Chord Builder ",
         CreatorPrompt::TagFilter => " Tag Filter ",
+        CreatorPrompt::SaveTitle => " Save — Song Title ",
+        CreatorPrompt::SavePath => " Save — File Path ",
+        CreatorPrompt::LoadPath => " Open — YAML Path ",
     };
     let input = match state.prompt {
         CreatorPrompt::Chord => state.chord_input.as_str(),
         CreatorPrompt::TagFilter => state.tag_filter_input.as_str(),
+        CreatorPrompt::SaveTitle => state.save_title_input.as_str(),
+        CreatorPrompt::SavePath => state.save_path_input.as_str(),
+        CreatorPrompt::LoadPath => state.load_path_input.as_str(),
     };
     let filter = state.tag_filter.as_deref().unwrap_or("none");
     let progression = if state.progression.is_empty() {
@@ -701,7 +942,7 @@ fn render_creator_header(frame: &mut Frame<'_>, area: Rect, state: &CreatorState
         ]),
         Line::from(format!("Progression: {progression}")),
         Line::from(format!(
-            "Filter: {filter} · j/k scroll · Enter add/select · t filter · T clear · Esc menu"
+            "Filter: {filter} · j/k scroll · Enter add/select · t filter · T clear · s save · S save as · o open · Esc menu"
         )),
     ])
     .block(Block::default().borders(Borders::ALL));
@@ -849,7 +1090,7 @@ fn render_live_header(frame: &mut Frame<'_>, area: Rect, state: &LiveState) {
         Line::from(if state.is_editing_path() {
             "Path input focused · Enter load · Tab grid · Esc menu"
         } else {
-            "TAB grid focused · j/k move · i or Tab edit path · Esc menu · q quit"
+            "TAB grid focused · j/k move · r reload · i or Tab change song · Esc menu · q quit"
         }),
     ];
 
